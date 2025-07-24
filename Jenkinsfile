@@ -197,32 +197,49 @@ pipeline {
                 script {
                     echo "🔨 Building .NET Solution"
                     sh '''#!/bin/bash
+                        # Export environment variables
+                        export PATH="${DOTNET_ROOT}:${PATH}"
+                        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+
                         cd Migrated
+
+                        # First build the entire solution
+                        echo "Building solution..."
                         ${DOTNET_ROOT}/dotnet build ${SOLUTION_FILE} \
                             --configuration Release \
                             --no-restore \
                             --verbosity normal \
                             /p:Version=${VERSION}
-                        
+
+                        # Create publish directories
                         mkdir -p publish/wcf publish/api publish/worker
-                        
+
+                        # Publish WCF Service
+                        echo "Publishing WCF Service..."
                         ${DOTNET_ROOT}/dotnet publish src/Services/WebServices/CreditTransferService/CreditTransfer.Services.WcfService.csproj \
                             --configuration Release \
                             --output ./publish/wcf \
-                            --no-build \
                             /p:Version=${VERSION}
-                        
+
+                        # Publish REST API
+                        echo "Publishing REST API..."
                         ${DOTNET_ROOT}/dotnet publish src/Services/ApiServices/CreditTransferApi/CreditTransfer.Services.RestApi.csproj \
                             --configuration Release \
                             --output ./publish/api \
-                            --no-build \
                             /p:Version=${VERSION}
-                        
+
+                        # Publish Worker Service
+                        echo "Publishing Worker Service..."
                         ${DOTNET_ROOT}/dotnet publish src/Services/WorkerServices/CreditTransferWorker/CreditTransfer.Services.WorkerService.csproj \
                             --configuration Release \
                             --output ./publish/worker \
-                            --no-build \
                             /p:Version=${VERSION}
+
+                        # Verify publish output
+                        echo "Verifying published output..."
+                        ls -la publish/wcf
+                        ls -la publish/api
+                        ls -la publish/worker
                     '''
                 }
             }
