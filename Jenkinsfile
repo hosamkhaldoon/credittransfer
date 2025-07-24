@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'mcr.microsoft.com/dotnet/sdk:8.0'
-            args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
     
     environment {
         // Project Configuration
@@ -44,6 +39,10 @@ pipeline {
         
         // Docker setup
         DOCKER_CONFIG = credentials('docker-config')
+        
+        // .NET SDK version
+        DOTNET_VERSION = '8.0'
+        DOTNET_ROOT = '/usr/share/dotnet'
     }
     
     options {
@@ -55,58 +54,101 @@ pipeline {
         preserveStashes(buildCount: 5)
     }
     
-    tools {
-        dotnetsdk 'DotNet-8.0'
-    }
-    
     stages {
         stage('🛠️ Setup Environment') {
             steps {
-                script {
-                    echo "🛠️ Setting up build environment"
-                    
-                    // Install Docker if needed
-                    sh '''
-                        if ! command -v docker &> /dev/null; then
-                            curl -fsSL https://get.docker.com -o get-docker.sh
-                            sh get-docker.sh
-                            rm get-docker.sh
-                        fi
+                node('built-in') {
+                    script {
+                        echo "🛠️ Setting up build environment"
                         
-                        # Verify installations
-                        dotnet --version || echo "dotnet not available"
-                        docker --version || echo "docker not available"
-                    '''
-                    
-                    // Set platform-specific commands
-                    env.MKDIR_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "mkdir -p"; else echo "mkdir"; fi', returnStdout: true).trim()
-                    env.CD_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "cd"; else echo "cd"; fi', returnStdout: true).trim()
-                    env.PATH_SEPARATOR = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "/"; else echo "\\\\"; fi', returnStdout: true).trim()
+                        // Create directories
+                        sh '''#!/bin/bash
+                            mkdir -p ${DOTNET_ROOT}
+                            mkdir -p ${TEST_RESULTS_DIR}
+                            mkdir -p ${COVERAGE_DIR}
+                            mkdir -p ${SECURITY_SCAN_DIR}
+                        '''
+                        
+                        // Install .NET SDK
+                        sh '''#!/bin/bash
+                            # Download and install .NET SDK
+                            if [ ! -f ${DOTNET_ROOT}/dotnet ]; then
+                                curl -sSL https://dot.net/v1/dotnet-install.sh > dotnet-install.sh
+                                chmod +x ./dotnet-install.sh
+                                ./dotnet-install.sh --version ${DOTNET_VERSION} --install-dir ${DOTNET_ROOT}
+                                rm dotnet-install.sh
+                            fi
+                            
+                            # Add .NET to PATH
+                            export PATH="${DOTNET_ROOT}:$PATH"
+                            
+                            # Verify .NET installation
+                            if command -v ${DOTNET_ROOT}/dotnet &> /dev/null; then
+                                echo ".NET SDK installed successfully"
+                                ${DOTNET_ROOT}/dotnet --version
+                            else
+                                echo ".NET SDK installation failed"
+                                exit 1
+                            fi
+                        '''
+                        
+                        // Install Docker if needed
+                        sh '''#!/bin/bash
+                            if ! command -v docker &> /dev/null; then
+                                echo "Installing Docker..."
+                                curl -fsSL https://get.docker.com -o get-docker.sh
+                                sh get-docker.sh || true
+                                rm get-docker.sh
+                                
+                                # Add current user to docker group
+                                if getent group docker > /dev/null; then
+                                    sudo usermod -aG docker $USER || true
+                                fi
+                            else
+                                echo "Docker is already installed"
+                                docker --version
+                            fi
+                        '''
+                    }
                 }
             }
         }
         
         stage('🚀 Pipeline Initialization') {
             steps {
-                script {
-                    echo "🚀 Starting CI/CD Pipeline for Credit Transfer Project"
-                    echo "📋 Build Number: ${BUILD_NUMBER}"
-                    echo "🔗 Git Commit: ${GIT_COMMIT_SHORT}"
-                    echo "🏷️  Version: ${VERSION}"
-                    echo "🖥️  Agent: ${env.NODE_NAME}"
-                    echo "🌿 Branch: ${env.BRANCH_NAME}"
-                    
-                    // Checkout code
-                    checkout scm
-                    
-                    // Setup .NET tools
-                    sh '''
-                        dotnet --version || echo "dotnet not available"
-                        dotnet tool restore || echo "tool restore failed"
-                        dotnet tool list --global || echo "tool list failed"
-                        docker --version || echo "docker not available"
-                        git --version || echo "git not available"
-                    '''
+                node('built-in') {
+                    script {
+                        echo "🚀 Starting CI/CD Pipeline for Credit Transfer Project"
+                        echo "📋 Build Number: ${BUILD_NUMBER}"
+                        echo "🔗 Git Commit: ${GIT_COMMIT_SHORT}"
+                        echo "🏷️  Version: ${VERSION}"
+                        echo "🖥️  Agent: ${env.NODE_NAME}"
+                        echo "🌿 Branch: ${env.BRANCH_NAME}"
+                        
+                        // Checkout code
+                        checkout scm
+                        
+                        // Verify environment
+                        sh '''#!/bin/bash
+                            # Add .NET to PATH
+                            export PATH="${DOTNET_ROOT}:$PATH"
+                            
+                            echo "Checking .NET SDK version:"
+                            ${DOTNET_ROOT}/dotnet --version || echo ".NET SDK not available"
+                            
+                            echo "Restoring .NET tools:"
+                            ${DOTNET_ROOT}/dotnet tool restore || echo "Tool restore failed"
+                            
+                            echo "Listing global tools:"
+                            ${DOTNET_ROOT}/dotnet tool list --global || echo "Tool list failed"
+                            
+                            echo "Checking Docker version:"
+                            docker --version || echo "Docker not available"
+                            
+                            echo "Checking Git version:"
+                            git --version || echo "Git not available"
+                        '''
+                    }
                 }
             }
             post {
@@ -804,63 +846,73 @@ pipeline {
     
     post {
         always {
-            script {
-                echo "🧹 Performing cleanup tasks"
-                
-                // Clean up Docker images if Docker is available
-                sh '''
-                    if command -v docker &> /dev/null; then
-                        docker image prune -f || echo "Docker cleanup failed"
-                        docker system df || echo "Docker system info failed"
-                    else
-                        echo "Docker not available"
-                    fi
-                '''
-                
-                // Archive important logs
-                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+            node('built-in') {
+                script {
+                    echo "🧹 Performing cleanup tasks"
+                    
+                    // Clean up Docker images if Docker is available
+                    sh '''#!/bin/bash
+                        if command -v docker &> /dev/null; then
+                            docker image prune -f || echo "Docker cleanup failed"
+                            docker system df || echo "Docker system info failed"
+                        else
+                            echo "Docker not available"
+                        fi
+                    '''
+                    
+                    // Archive important logs
+                    archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                }
             }
         }
         
         success {
-            script {
-                sendNotification('SUCCESS', 'Pipeline completed successfully')
-                
-                // Update deployment status
-                sh '''
-                    echo "Pipeline completed successfully at $(date)" > deployment-status.txt
-                '''
-                archiveArtifacts artifacts: 'deployment-status.txt'
+            node('built-in') {
+                script {
+                    sendNotification('SUCCESS', 'Pipeline completed successfully')
+                    
+                    // Update deployment status
+                    sh '''#!/bin/bash
+                        echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                    '''
+                    archiveArtifacts artifacts: 'deployment-status.txt'
+                }
             }
         }
         
         failure {
-            script {
-                sendNotification('FAILED', 'Pipeline failed')
-                
-                // Collect failure information
-                sh '''
-                    echo "Pipeline failed at $(date)" > failure-status.txt
-                    if command -v docker &> /dev/null; then
-                        docker ps -a >> failure-status.txt
-                        docker images >> failure-status.txt
-                    else
-                        echo "Docker not available" >> failure-status.txt
-                    fi
-                '''
-                archiveArtifacts artifacts: 'failure-status.txt'
+            node('built-in') {
+                script {
+                    sendNotification('FAILED', 'Pipeline failed')
+                    
+                    // Collect failure information
+                    sh '''#!/bin/bash
+                        echo "Pipeline failed at $(date)" > failure-status.txt
+                        if command -v docker &> /dev/null; then
+                            docker ps -a >> failure-status.txt
+                            docker images >> failure-status.txt
+                        else
+                            echo "Docker not available" >> failure-status.txt
+                        fi
+                    '''
+                    archiveArtifacts artifacts: 'failure-status.txt'
+                }
             }
         }
         
         unstable {
-            script {
-                sendNotification('UNSTABLE', 'Pipeline completed with issues')
+            node('built-in') {
+                script {
+                    sendNotification('UNSTABLE', 'Pipeline completed with issues')
+                }
             }
         }
         
         aborted {
-            script {
-                sendNotification('ABORTED', 'Pipeline was aborted')
+            node('built-in') {
+                script {
+                    sendNotification('ABORTED', 'Pipeline was aborted')
+                }
             }
         }
     }
