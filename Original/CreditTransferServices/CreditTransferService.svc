@@ -1,0 +1,1 @@
+﻿<%@ ServiceHost Language="C#" Debug="true" Service="CreditTransferServices.CreditTransferService" CodeBehind="CreditTransferService.svc.cs" %>

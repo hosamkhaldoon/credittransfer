@@ -1,0 +1,6 @@
+@CreditTransfer.Services.RestApi_HostAddress = http://localhost:5056
+
+GET {{CreditTransfer.Services.RestApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

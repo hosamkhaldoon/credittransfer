@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credittransfer-api
+  namespace: credittransfer
+  labels:
+    app: credittransfer-api
+    version: v1
+spec:
+  replicas: 1  # Reduced to 1 to avoid conflicts
+  selector:
+    matchLabels:
+      app: credittransfer-api
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: credittransfer-api
+        version: v1
+      annotations:
+        # Istio annotations for observability
+        sidecar.istio.io/proxyCPU: "10m"
+        sidecar.istio.io/proxyMemory: "128Mi"
+    spec:
+      containers:
+      - name: credittransfer-api
+        image: credittransfer-api:latest
+        imagePullPolicy: IfNotPresent  # Changed from Never to IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        envFrom:
+        - configMapRef:
+            name: credittransfer-config
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Production"
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            configMapKeyRef:
+              name: credittransfer-config
+              key: CONNECTION_STRING
+        - name: Redis__ConnectionString
+          valueFrom:
+            configMapKeyRef:
+              name: credittransfer-config
+              key: REDIS_CONNECTION_STRING
+        - name: Keycloak__Authority
+          valueFrom:
+            configMapKeyRef:
+              name: credittransfer-config
+              key: KEYCLOAK_AUTHORITY
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 15
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: credittransfer-api
+  namespace: credittransfer
+  labels:
+    app: credittransfer-api
+spec:
+  selector:
+    app: credittransfer-api
+  ports:
+  - port: 80          # External service port (for other pods)
+    targetPort: 80    # Container port (where app listens)
+    name: http
+  type: ClusterIP 

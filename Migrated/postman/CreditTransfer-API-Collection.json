@@ -1,0 +1,756 @@
+{
+	"info": {
+		"_postman_id": "53afedde-e918-4272-b05e-f98392ac7715",
+		"name": "Credit Transfer API Collection",
+		"description": "Comprehensive API testing collection for Credit Transfer system migration (.NET Framework 4.0 to .NET 8)\n\nIncludes:\n- Keycloak Authentication\n- WCF Service endpoints (legacy compatibility)\n- REST API endpoints (modern)\n- Error handling scenarios\n- Business logic validation",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "2574851"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Get Keycloak Token (Admin)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('access_token', response.access_token);",
+									"    pm.environment.set('refresh_token', response.refresh_token);",
+									"    console.log('Admin token obtained successfully');",
+									"} else {",
+									"    console.log('Failed to get admin token:', pm.response.text());",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "grant_type",
+									"value": "password",
+									"type": "text"
+								},
+								{
+									"key": "client_id",
+									"value": "credittransfer-api",
+									"type": "text"
+								},
+								{
+									"key": "username",
+									"value": "admin",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "admin123",
+									"type": "text"
+								},
+								{
+									"key": "scope",
+									"value": "openid profile email",
+									"type": "text"
+								},
+								{
+									"key": "client_secret",
+									"value": "credittransfer-secret-2024",
+									"type": "text",
+									"disabled": true
+								}
+							]
+						},
+						"url": {
+							"raw": "{{keycloak_url}}/realms/credittransfer/protocol/openid-connect/token",
+							"host": [
+								"{{keycloak_url}}"
+							],
+							"path": [
+								"realms",
+								"credittransfer",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Keycloak Token (Operator)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('operator_token', response.access_token);",
+									"    console.log('Operator token obtained successfully');",
+									"} else {",
+									"    console.log('Failed to get operator token:', pm.response.text());",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "grant_type",
+									"value": "password",
+									"type": "text"
+								},
+								{
+									"key": "client_id",
+									"value": "credittransfer-api",
+									"type": "text"
+								},
+								{
+									"key": "username",
+									"value": "operator",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "operator123",
+									"type": "text"
+								},
+								{
+									"key": "scope",
+									"value": "openid profile email",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{keycloak_url}}/realms/credittransfer/protocol/openid-connect/token",
+							"host": [
+								"{{keycloak_url}}"
+							],
+							"path": [
+								"realms",
+								"credittransfer",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "REST API Endpoints",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{rest_api_url}}/health",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "System Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{rest_api_url}}/api/CreditTransfer/health/system",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"CreditTransfer",
+								"health",
+								"system"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Denominations",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/denominations",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"denominations"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Transfer Credit",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has required fields', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('statusCode');",
+									"    pm.expect(response).to.have.property('statusMessage');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"96812345678\",\n  \"destinationMsisdn\": \"96887654321\",\n  \"amountRiyal\": 10,\n  \"amountBaisa\": 0,\n  \"pin\": \"1234\"\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/transfer",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"transfer"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Transfer Credit with Adjustment Reason",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"96812345678\",\n  \"destinationMsisdn\": \"96887654321\",\n  \"amountRiyal\": 5,\n  \"amountBaisa\": 500,\n  \"pin\": \"1234\",\n  \"adjustmentReason\": \"Customer Service Adjustment\"\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/transfer-with-adjustment",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"transfer-with-adjustment"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Transfer Credit Without PIN (Service Center)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"96812345678\",\n  \"destinationMsisdn\": \"96887654321\",\n  \"amountRiyal\": 20.5\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/transfer-without-pin",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"transfer-without-pin"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Validate Transfer Inputs",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"96898455550\",\n  \"destinationMsisdn\": \"96878323523\",\n  \"amount\": 1.0\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/validate",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"validate"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "WCF Service Endpoints",
+			"item": [
+				{
+					"name": "WCF - Get Denominations",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "text/xml; charset=utf-8"
+							},
+							{
+								"key": "SOAPAction",
+								"value": "http://tempuri.org/ICreditTransferService/GetDenomination"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Body>\n    <GetDenomination xmlns=\"http://tempuri.org/\" />\n  </soap:Body>\n</soap:Envelope>"
+						},
+						"url": {
+							"raw": "{{wcf_service_url}}/CreditTransferService.svc",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								"CreditTransferService.svc"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "WCF - Transfer Credit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "text/xml; charset=utf-8"
+							},
+							{
+								"key": "SOAPAction",
+								"value": "http://tempuri.org/ICreditTransferService/TransferCredit"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Body>\n    <TransferCredit xmlns=\"http://tempuri.org/\">\n      <sourceMsisdn>96812345678</sourceMsisdn>\n      <destinationMsisdn>96887654321</destinationMsisdn>\n      <amountRiyal>10</amountRiyal>\n      <amountBaisa>0</amountBaisa>\n      <pin>1234</pin>\n    </TransferCredit>\n  </soap:Body>\n</soap:Envelope>"
+						},
+						"url": {
+							"raw": "{{wcf_service_url}}/CreditTransferService.svc",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								"CreditTransferService.svc"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "WCF - Transfer Credit with Adjustment Reason",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "text/xml; charset=utf-8"
+							},
+							{
+								"key": "SOAPAction",
+								"value": "http://tempuri.org/ICreditTransferService/TransferCreditWithAdjustmentReason"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Body>\n    <TransferCreditWithAdjustmentReason xmlns=\"http://tempuri.org/\">\n      <sourceMsisdn>96812345678</sourceMsisdn>\n      <destinationMsisdn>96887654321</destinationMsisdn>\n      <amountRiyal>5</amountRiyal>\n      <amountBaisa>500</amountBaisa>\n      <pin>1234</pin>\n      <adjustmentReason>Customer Service Adjustment</adjustmentReason>\n    </TransferCreditWithAdjustmentReason>\n  </soap:Body>\n</soap:Envelope>"
+						},
+						"url": {
+							"raw": "{{wcf_service_url}}/CreditTransferService.svc",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								"CreditTransferService.svc"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "WCF - Transfer Credit Without PIN",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "text/xml; charset=utf-8"
+							},
+							{
+								"key": "SOAPAction",
+								"value": "http://tempuri.org/ICreditTransferService/TransferCreditWithoutPinforSC"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Body>\n    <TransferCreditWithoutPinforSC xmlns=\"http://tempuri.org/\">\n      <sourceMsisdn>96812345678</sourceMsisdn>\n      <destinationMsisdn>96887654321</destinationMsisdn>\n      <amountRiyal>20.5</amountRiyal>\n    </TransferCreditWithoutPinforSC>\n  </soap:Body>\n</soap:Envelope>"
+						},
+						"url": {
+							"raw": "{{wcf_service_url}}/CreditTransferService.svc",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								"CreditTransferService.svc"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "WCF - Validate Transfer Inputs",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "text/xml; charset=utf-8"
+							},
+							{
+								"key": "SOAPAction",
+								"value": "http://tempuri.org/ICreditTransferService/ValidateTransferInputs"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Body>\n    <ValidateTransferInputs xmlns=\"http://tempuri.org/\">\n      <sourceMsisdn>96812345678</sourceMsisdn>\n      <destinationMsisdn>96887654321</destinationMsisdn>\n      <amountRiyal>15.0</amountRiyal>\n    </ValidateTransferInputs>\n  </soap:Body>\n</soap:Envelope>"
+						},
+						"url": {
+							"raw": "{{wcf_service_url}}/CreditTransferService.svc",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								"CreditTransferService.svc"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Error Scenarios",
+			"item": [
+				{
+					"name": "REST - Invalid Source Phone",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error response contains status code 20', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.statusCode).to.eql(20);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"invalid\",\n  \"destinationMsisdn\": \"96887654321\",\n  \"amountRiyal\": 10,\n  \"amountBaisa\": 0,\n  \"pin\": \"1234\"\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/transfer",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"transfer"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "REST - Same Source and Destination",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error response contains status code 3', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.statusCode).to.eql(3);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"96812345678\",\n  \"destinationMsisdn\": \"96812345678\",\n  \"amountRiyal\": 10,\n  \"amountBaisa\": 0,\n  \"pin\": \"1234\"\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/transfer",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"transfer"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "REST - Unauthorized Access",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 401', function () {",
+									"    pm.response.to.have.status(401);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"96812345678\",\n  \"destinationMsisdn\": \"96887654321\",\n  \"amountRiyal\": 10,\n  \"amountBaisa\": 0,\n  \"pin\": \"1234\"\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/transfer",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"transfer"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "keycloak_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "rest_api_url",
+			"value": "http://localhost:5002",
+			"type": "string"
+		},
+		{
+			"key": "wcf_service_url",
+			"value": "http://localhost:5001",
+			"type": "string"
+		}
+	]
+}

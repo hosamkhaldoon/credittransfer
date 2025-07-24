@@ -1,0 +1,236 @@
+# OpenTelemetry Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opentelemetry-system
+---
+# NOTE: The following OpenTelemetryCollector and Instrumentation resources require
+# the OpenTelemetry Operator to be installed. If you want to use them, install the operator first:
+# kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
+
+# apiVersion: opentelemetry.io/v1alpha1
+# kind: OpenTelemetryCollector
+# metadata:
+#   name: otel-collector
+#   namespace: credittransfer
+# spec:
+#   config: |
+#     receivers:
+#       otlp:
+#         protocols:
+#           grpc:
+#             endpoint: 0.0.0.0:4317
+#           http:
+#             endpoint: 0.0.0.0:4318
+#       jaeger:
+#         protocols:
+#           grpc:
+#             endpoint: 0.0.0.0:14250
+#           thrift_http:
+#             endpoint: 0.0.0.0:14268
+#           thrift_compact:
+#             endpoint: 0.0.0.0:6831
+#           thrift_binary:
+#             endpoint: 0.0.0.0:6832
+#       zipkin:
+#         endpoint: 0.0.0.0:9411
+#       prometheus:
+#         config:
+#           scrape_configs:
+#           - job_name: 'otel-collector'
+#             scrape_interval: 10s
+#             static_configs:
+#             - targets: ['0.0.0.0:8888']
+
+#     processors:
+#       batch:
+#         timeout: 1s
+#         send_batch_size: 1024
+#       memory_limiter:
+#         limit_mib: 512
+
+#     exporters:
+#       jaeger:
+#         endpoint: jaeger:14250
+#         tls:
+#           insecure: true
+#       prometheus:
+#         endpoint: "0.0.0.0:8889"
+#       logging:
+#         loglevel: debug
+
+#     service:
+#       pipelines:
+#         traces:
+#           receivers: [otlp, jaeger, zipkin]
+#           processors: [memory_limiter, batch]
+#           exporters: [jaeger, logging]
+#         metrics:
+#           receivers: [otlp, prometheus]
+#           processors: [memory_limiter, batch]
+#           exporters: [prometheus, logging]
+#         logs:
+#           receivers: [otlp]
+#           processors: [memory_limiter, batch]
+#           exporters: [logging]
+#   replicas: 1
+#   resources:
+#     limits:
+#       cpu: 500m
+#       memory: 1Gi
+#     requests:
+#       cpu: 100m
+#       memory: 256Mi
+
+# apiVersion: opentelemetry.io/v1alpha1
+# kind: Instrumentation
+# metadata:
+#   name: credittransfer-instrumentation
+#   namespace: credittransfer
+# spec:
+#   exporter:
+#     endpoint: http://otel-collector:4318
+#   propagators:
+#     - tracecontext
+#     - baggage
+#     - b3
+#   sampler:
+#     type: parentbased_traceidratio
+#     argument: "1.0"
+#   dotnet:
+#     env:
+#       - name: OTEL_EXPORTER_OTLP_ENDPOINT
+#         value: http://otel-collector:4318
+#       - name: OTEL_RESOURCE_ATTRIBUTES
+#         value: service.name=credittransfer,service.version=1.0.0
+#       - name: OTEL_SERVICE_NAME
+#         value: credittransfer
+
+# Simple OpenTelemetry Collector Deployment (without operator)
+# Applications will send traces directly to Jaeger instead
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: credittransfer
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.93.0
+        command:
+        - "/otelcol-contrib"
+        - "--config=/etc/otelcol-contrib/config.yaml"
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 8889
+          name: metrics
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otelcol-contrib
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: credittransfer
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: 'credittransfer-api'
+            scrape_interval: 15s
+            static_configs:
+            - targets: ['credittransfer-api:80']
+          - job_name: 'credittransfer-wcf'
+            scrape_interval: 15s
+            static_configs:
+            - targets: ['credittransfer-wcf:80']
+
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      memory_limiter:
+        limit_mib: 512
+        check_interval: 1s
+
+    exporters:
+      otlp:
+        endpoint: jaeger:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: "credittransfer"
+        const_labels:
+          service_name: "otel-collector"
+      logging:
+        loglevel: debug
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp, logging]
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus, logging]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: credittransfer
+  labels:
+    app: otel-collector
+spec:
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    protocol: TCP
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    protocol: TCP
+    targetPort: 4318
+  - name: metrics
+    port: 8889
+    protocol: TCP
+    targetPort: 8889
+  selector:
+    app: otel-collector 

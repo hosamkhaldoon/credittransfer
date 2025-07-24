@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:tns="http://tempuri.org/" elementFormDefault="qualified" targetNamespace="http://tempuri.org/" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:import schemaLocation="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd2" namespace="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" />
+  <xs:element name="GetAvailableProducts">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element xmlns:q1="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" minOccurs="0" name="request" nillable="true" type="q1:ProductSellingRequest" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="GetAvailableProductsResponse">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element xmlns:q2="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" minOccurs="0" name="GetAvailableProductsResult" nillable="true" type="q2:ProductResponse" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="SubmitProductSelling">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element xmlns:q3="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" minOccurs="0" name="request" nillable="true" type="q3:ProductSellingRequest" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="SubmitProductSellingResponse">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element xmlns:q4="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" minOccurs="0" name="SubmitProductSellingResult" nillable="true" type="q4:booleanResult" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="GetUsedAdjustmentReasons">
+    <xs:complexType>
+      <xs:sequence />
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="GetUsedAdjustmentReasonsResponse">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element xmlns:q5="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" minOccurs="0" name="GetUsedAdjustmentReasonsResult" nillable="true" type="q5:lstStringResult" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

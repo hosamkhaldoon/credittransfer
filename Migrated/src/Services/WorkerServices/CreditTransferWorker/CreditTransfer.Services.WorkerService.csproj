@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-CreditTransfer.Services.WorkerService-f0c6753b-8142-4c9e-b035-437d8c51c9be</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.6" />
+    
+    <!-- OpenTelemetry packages for logging, tracing, and metrics -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.12.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.12.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.9.0-beta.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Process" Version="0.5.0-beta.6" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.12.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.9.0-beta.2" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.12.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Core\Application\CreditTransfer.Core.Application.csproj" />
+    <ProjectReference Include="..\..\..\Core\Domain\CreditTransfer.Core.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Core\Authentication\CreditTransfer.Core.Authentication.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\CreditTransfer.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\IntegrationProxies\IntegrationProxies.Nobill.csproj" />
+  </ItemGroup>
+</Project>

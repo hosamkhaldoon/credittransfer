@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:tns="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" elementFormDefault="qualified" targetNamespace="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:import schemaLocation="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd3" namespace="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+  <xs:complexType name="ProductSellingRequest">
+    <xs:sequence>
+      <xs:element minOccurs="0" name="DealerCode" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="IDNumber" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="IsOnActivation" type="xs:boolean" />
+      <xs:element minOccurs="0" name="Language" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="Latitude" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="Longitude" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="MSISDN" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="ProductId" type="xs:int" />
+      <xs:element minOccurs="0" name="SubscribeOnce" type="xs:boolean" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ProductSellingRequest" nillable="true" type="tns:ProductSellingRequest" />
+  <xs:complexType name="ProductResponse">
+    <xs:complexContent mixed="false">
+      <xs:extension base="tns:ReturnResponse">
+        <xs:sequence>
+          <xs:element minOccurs="0" name="result" nillable="true" type="tns:ArrayOfProductCategoryView" />
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <xs:element name="ProductResponse" nillable="true" type="tns:ProductResponse" />
+  <xs:complexType name="ReturnResponse">
+    <xs:sequence>
+      <xs:element minOccurs="0" name="response" nillable="true" type="tns:ResponseResult" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ReturnResponse" nillable="true" type="tns:ReturnResponse" />
+  <xs:complexType name="ResponseResult">
+    <xs:sequence>
+      <xs:element minOccurs="0" name="Code" type="xs:int" />
+      <xs:element minOccurs="0" name="ErrorMessage" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="IsSuccess" type="xs:boolean" />
+      <xs:element minOccurs="0" name="SuccessMessage" nillable="true" type="xs:string" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ResponseResult" nillable="true" type="tns:ResponseResult" />
+  <xs:complexType name="ArrayOfProductCategoryView">
+    <xs:sequence>
+      <xs:element minOccurs="0" maxOccurs="unbounded" name="ProductCategoryView" nillable="true" type="tns:ProductCategoryView" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ArrayOfProductCategoryView" nillable="true" type="tns:ArrayOfProductCategoryView" />
+  <xs:complexType name="ProductCategoryView">
+    <xs:sequence>
+      <xs:element minOccurs="0" name="ID" type="xs:int" />
+      <xs:element minOccurs="0" name="Name" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="Ordinal" type="xs:int" />
+      <xs:element minOccurs="0" name="ProductSubCategories" nillable="true" type="tns:ArrayOfProductSubCategoryView" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ProductCategoryView" nillable="true" type="tns:ProductCategoryView" />
+  <xs:complexType name="ArrayOfProductSubCategoryView">
+    <xs:sequence>
+      <xs:element minOccurs="0" maxOccurs="unbounded" name="ProductSubCategoryView" nillable="true" type="tns:ProductSubCategoryView" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ArrayOfProductSubCategoryView" nillable="true" type="tns:ArrayOfProductSubCategoryView" />
+  <xs:complexType name="ProductSubCategoryView">
+    <xs:sequence>
+      <xs:element minOccurs="0" name="ID" type="xs:int" />
+      <xs:element minOccurs="0" name="Name" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="Ordinal" type="xs:int" />
+      <xs:element minOccurs="0" name="Products" nillable="true" type="tns:ArrayOfProductView" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ProductSubCategoryView" nillable="true" type="tns:ProductSubCategoryView" />
+  <xs:complexType name="ArrayOfProductView">
+    <xs:sequence>
+      <xs:element minOccurs="0" maxOccurs="unbounded" name="ProductView" nillable="true" type="tns:ProductView" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ArrayOfProductView" nillable="true" type="tns:ArrayOfProductView" />
+  <xs:complexType name="ProductView">
+    <xs:sequence>
+      <xs:element minOccurs="0" name="DealerCommission" type="xs:double" />
+      <xs:element xmlns:q1="http://schemas.microsoft.com/2003/10/Serialization/Arrays" minOccurs="0" name="Details" nillable="true" type="q1:ArrayOfstring" />
+      <xs:element minOccurs="0" name="ID" type="xs:int" />
+      <xs:element minOccurs="0" name="IsRenewable" type="xs:boolean" />
+      <xs:element minOccurs="0" name="Name" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="Ordinal" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="Price" nillable="true" type="xs:string" />
+      <xs:element minOccurs="0" name="SubscriptionManagementID" type="xs:int" />
+      <xs:element minOccurs="0" name="Validity" nillable="true" type="xs:string" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="ProductView" nillable="true" type="tns:ProductView" />
+  <xs:complexType name="booleanResult">
+    <xs:complexContent mixed="false">
+      <xs:extension base="tns:ReturnResponse">
+        <xs:sequence>
+          <xs:element minOccurs="0" name="result" type="xs:boolean" />
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <xs:element name="booleanResult" nillable="true" type="tns:booleanResult" />
+  <xs:complexType name="lstStringResult">
+    <xs:complexContent mixed="false">
+      <xs:extension base="tns:ReturnResponse">
+        <xs:sequence>
+          <xs:element xmlns:q2="http://schemas.microsoft.com/2003/10/Serialization/Arrays" minOccurs="0" name="result" nillable="true" type="q2:ArrayOfstring" />
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <xs:element name="lstStringResult" nillable="true" type="tns:lstStringResult" />
+</xs:schema>

@@ -1,0 +1,67 @@
+{
+  "ExtendedData": {
+    "inputs": [
+      "../../../../../../Original/CreditTransferEngine/Web References/NobillCalls/NobillCalls.wsdl"
+    ],
+    "collectionTypes": [
+      "System.Array",
+      "System.Collections.Generic.Dictionary`2"
+    ],
+    "namespaceMappings": [
+      "*, NobillCalls"
+    ],
+    "references": [
+      "Azure.Core, {Azure.Core, 1.25.0}",
+      "Azure.Identity, {Azure.Identity, 1.7.0}",
+      "E:\\LP\\UpgradeStack\\CreditTransfer\\Migrated\\src\\Core\\Infrastructure\\bin\\Debug\\net8.0\\CreditTransfer.Core.Application.dll",
+      "E:\\LP\\UpgradeStack\\CreditTransfer\\Migrated\\src\\Core\\Infrastructure\\bin\\Debug\\net8.0\\CreditTransfer.Core.Domain.dll",
+      "E:\\LP\\UpgradeStack\\CreditTransfer\\Migrated\\src\\Core\\Infrastructure\\bin\\Debug\\net8.0\\CreditTransfer.Infrastructure.dll",
+      "Microsoft.Bcl.AsyncInterfaces, {Microsoft.Bcl.AsyncInterfaces, 1.1.1}",
+      "Microsoft.Data.SqlClient, {Microsoft.Data.SqlClient, 5.1.1}",
+      "Microsoft.EntityFrameworkCore, {Microsoft.EntityFrameworkCore, 8.0.0}",
+      "Microsoft.EntityFrameworkCore.Abstractions, {Microsoft.EntityFrameworkCore.Abstractions, 8.0.0}",
+      "Microsoft.EntityFrameworkCore.Relational, {Microsoft.EntityFrameworkCore.Relational, 8.0.0}",
+      "Microsoft.EntityFrameworkCore.SqlServer, {Microsoft.EntityFrameworkCore.SqlServer, 8.0.0}",
+      "Microsoft.Extensions.Caching.Abstractions, {Microsoft.Extensions.Caching.Abstractions, 8.0.0}",
+      "Microsoft.Extensions.Caching.Memory, {Microsoft.Extensions.Caching.Memory, 8.0.0}",
+      "Microsoft.Extensions.Caching.StackExchangeRedis, {Microsoft.Extensions.Caching.StackExchangeRedis, 8.0.0}",
+      "Microsoft.Extensions.Configuration, {Microsoft.Extensions.Configuration, 8.0.0}",
+      "Microsoft.Extensions.Configuration.Abstractions, {Microsoft.Extensions.Configuration.Abstractions, 8.0.0}",
+      "Microsoft.Extensions.Configuration.Binder, {Microsoft.Extensions.Configuration.Binder, 8.0.0}",
+      "Microsoft.Extensions.DependencyInjection, {Microsoft.Extensions.DependencyInjection, 8.0.0}",
+      "Microsoft.Extensions.DependencyInjection.Abstractions, {Microsoft.Extensions.DependencyInjection.Abstractions, 8.0.0}",
+      "Microsoft.Extensions.Diagnostics, {Microsoft.Extensions.Diagnostics, 8.0.0}",
+      "Microsoft.Extensions.Diagnostics.Abstractions, {Microsoft.Extensions.Diagnostics.Abstractions, 8.0.0}",
+      "Microsoft.Extensions.Http, {Microsoft.Extensions.Http, 8.0.0}",
+      "Microsoft.Extensions.Logging, {Microsoft.Extensions.Logging, 8.0.0}",
+      "Microsoft.Extensions.Logging.Abstractions, {Microsoft.Extensions.Logging.Abstractions, 8.0.0}",
+      "Microsoft.Extensions.Options, {Microsoft.Extensions.Options, 8.0.0}",
+      "Microsoft.Extensions.Options.ConfigurationExtensions, {Microsoft.Extensions.Options.ConfigurationExtensions, 8.0.0}",
+      "Microsoft.Extensions.Primitives, {Microsoft.Extensions.Primitives, 8.0.0}",
+      "Microsoft.Identity.Client, {Microsoft.Identity.Client, 4.47.2}",
+      "Microsoft.Identity.Client.Extensions.Msal, {Microsoft.Identity.Client.Extensions.Msal, 2.19.3}",
+      "Microsoft.IdentityModel.Abstractions, {Microsoft.IdentityModel.Abstractions, 6.24.0}",
+      "Microsoft.IdentityModel.JsonWebTokens, {Microsoft.IdentityModel.JsonWebTokens, 6.24.0}",
+      "Microsoft.IdentityModel.Logging, {Microsoft.IdentityModel.Logging, 6.24.0}",
+      "Microsoft.IdentityModel.Protocols, {Microsoft.IdentityModel.Protocols, 6.24.0}",
+      "Microsoft.IdentityModel.Protocols.OpenIdConnect, {Microsoft.IdentityModel.Protocols.OpenIdConnect, 6.24.0}",
+      "Microsoft.IdentityModel.Tokens, {Microsoft.IdentityModel.Tokens, 6.24.0}",
+      "Microsoft.SqlServer.Server, {Microsoft.SqlServer.Server, 1.0.0}",
+      "Pipelines.Sockets.Unofficial, {Pipelines.Sockets.Unofficial, 2.2.8}",
+      "StackExchange.Redis, {StackExchange.Redis, 2.6.122}",
+      "System.Data.SqlClient, {System.Data.SqlClient, 4.8.6}",
+      "System.Diagnostics.DiagnosticSource, {System.Diagnostics.DiagnosticSource, 8.0.0}",
+      "System.IdentityModel.Tokens.Jwt, {System.IdentityModel.Tokens.Jwt, 6.24.0}",
+      "System.IO.Pipelines, {System.IO.Pipelines, 5.0.1}",
+      "System.Memory.Data, {System.Memory.Data, 1.0.2}",
+      "System.Runtime, {System.Runtime, 4.3.0}",
+      "System.Security.Cryptography.Cng, {System.Security.Cryptography.Cng, 5.0.0}",
+      "System.Security.Cryptography.ProtectedData, {System.Security.Cryptography.ProtectedData, 6.0.0}",
+      "System.Text.Encoding, {System.Text.Encoding, 4.3.0}",
+      "System.Text.Encodings.Web, {System.Text.Encodings.Web, 8.0.0}",
+      "System.Text.Json, {System.Text.Json, 8.0.0}"
+    ],
+    "targetFramework": "net8.0",
+    "typeReuseMode": "All"
+  }
+}

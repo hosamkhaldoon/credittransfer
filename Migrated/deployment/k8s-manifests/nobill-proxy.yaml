@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nobill-proxy-config
+  namespace: credittransfer
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    http {
+        upstream nobill-backend {
+            server host.docker.internal:80;
+        }
+        
+        server {
+            listen 80;
+            server_name _;
+            
+            # Proxy all requests to NoBill UAT service on host machine
+            location /NobillProxy.UAT/ {
+                proxy_pass http://10.1.132.98/NobillProxy.UAT/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+            
+            # Fallback for production path (redirects to UAT)
+            location /NobillProxy/ {
+                proxy_pass http://10.1.132.98/NobillProxy.UAT/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+            
+            # Health check endpoint
+            location /health {
+                return 200 "NoBill Proxy Healthy\n";
+                add_header Content-Type text/plain;
+            }
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nobill-proxy
+  namespace: credittransfer
+  labels:
+    app: nobill-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nobill-proxy
+  template:
+    metadata:
+      labels:
+        app: nobill-proxy
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: config
+        configMap:
+          name: nobill-proxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nobill-proxy
+  namespace: credittransfer
+  labels:
+    app: nobill-proxy
+spec:
+  selector:
+    app: nobill-proxy
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP 

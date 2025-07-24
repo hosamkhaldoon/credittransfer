@@ -1,0 +1,14 @@
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferWeb\bin\CreditTransfer.dll.config
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferWeb\bin\CreditTransfer.dll
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferWeb\bin\CreditTransfer.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.csprojAssemblyReference.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.dll
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.csproj.CoreCompileInputs.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferWeb\bin\CreditTransfer.dll.config
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferWeb\bin\CreditTransfer.dll
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferWeb\bin\CreditTransfer.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.csproj.AssemblyReference.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.csproj.CoreCompileInputs.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.dll
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferWeb\obj\Debug\CreditTransfer.pdb

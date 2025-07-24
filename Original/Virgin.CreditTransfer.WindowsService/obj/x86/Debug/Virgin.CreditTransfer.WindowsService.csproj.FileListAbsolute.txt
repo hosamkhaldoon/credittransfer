@@ -1,0 +1,34 @@
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.exe.config
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.exe.manifest
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.application
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.exe
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\CreditTransferEngine.dll
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\CreditTransferEngine.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\CreditTransferEngine.dll.config
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csprojAssemblyReference.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.ProjectInstaller.resources
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csproj.GenerateResource.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csproj.CoreCompileInputs.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.exe.manifest
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.application
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csproj.CopyComplete
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.exe
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.exe.config
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.exe.manifest
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.application
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.exe
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\Virgin.CreditTransfer.WindowsService.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\CreditTransferEngine.dll
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\CreditTransferEngine.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\bin\Debug\CreditTransferEngine.dll.config
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csproj.AssemblyReference.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.ProjectInstaller.resources
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csproj.GenerateResource.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csproj.CoreCompileInputs.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.exe.manifest
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.application
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.csproj.CopyComplete
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.exe
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.CreditTransfer.WindowsService\obj\x86\Debug\Virgin.CreditTransfer.WindowsService.pdb

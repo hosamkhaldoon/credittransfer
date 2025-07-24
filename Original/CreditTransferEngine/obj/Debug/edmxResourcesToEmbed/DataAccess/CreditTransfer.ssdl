@@ -1,0 +1,120 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Schema Namespace="CreditTransferModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2008" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/02/edm/ssdl">
+  <EntityType Name="ErrorLog">
+    <Key>
+      <PropertyRef Name="ErrorLogId" />
+    </Key>
+    <Property Name="ErrorLogId" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+    <Property Name="Exception" Type="nvarchar(max)" Nullable="false" />
+    <Property Name="StackTrace" Type="nvarchar(max)" Nullable="false" />
+    <Property Name="LogId" Type="int" Nullable="false" />
+  </EntityType>
+  <EntityType Name="Log">
+    <Key>
+      <PropertyRef Name="LogId" />
+    </Key>
+    <Property Name="LogId" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+    <Property Name="ReceivedRequest" Type="nvarchar(max)" Nullable="false" />
+    <Property Name="MethodName" Type="nvarchar" MaxLength="100" />
+    <Property Name="RequestedBy" Type="nvarchar" MaxLength="100" Nullable="false" />
+    <Property Name="Status" Type="int" />
+    <Property Name="StatusText" Type="nvarchar(max)" />
+    <Property Name="RequestDate" Type="datetime" Nullable="false" />
+  </EntityType>
+  <EntityType Name="Messages">
+    <Key>
+      <PropertyRef Name="Id" />
+    </Key>
+    <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+    <Property Name="Key" Type="nvarchar" MaxLength="50" Nullable="false" />
+    <Property Name="TextEn" Type="nvarchar" MaxLength="100" Nullable="false" />
+    <Property Name="TextAr" Type="nvarchar" MaxLength="100" Nullable="false" />
+  </EntityType>
+  <EntityType Name="Transaction">
+    <Key>
+      <PropertyRef Name="Id" />
+    </Key>
+    <Property Name="Id" Type="bigint" StoreGeneratedPattern="Identity" Nullable="false" />
+    <Property Name="SourceMsisdn" Type="nvarchar" MaxLength="20" Nullable="false" />
+    <Property Name="DestinationMsisdn" Type="nvarchar" MaxLength="20" Nullable="false" />
+    <Property Name="Amount" Type="money" Nullable="false" />
+    <Property Name="PIN" Type="nvarchar" MaxLength="6" Nullable="false" />
+    <Property Name="IsFromCustomer" Type="bit" Nullable="false" />
+    <Property Name="IsEventReserved" Type="bit" Nullable="false" />
+    <Property Name="IsAmountTransfered" Type="bit" Nullable="false" />
+    <Property Name="IsEventCharged" Type="bit" Nullable="false" />
+    <Property Name="IsEventCancelled" Type="bit" Nullable="false" />
+    <Property Name="IsExpiryExtended" Type="bit" Nullable="false" />
+    <Property Name="ExtensionDays" Type="int" Nullable="false" />
+    <Property Name="ReservationId" Type="int" Nullable="false" />
+    <Property Name="StatusId" Type="tinyint" Nullable="false" />
+    <Property Name="NumberOfRetries" Type="int" Nullable="false" />
+    <Property Name="CreationDate" Type="datetime" Nullable="false" />
+    <Property Name="CreatedBy" Type="nvarchar" MaxLength="50" Nullable="false" />
+    <Property Name="ModificationDate" Type="datetime" />
+    <Property Name="ModifiedBy" Type="nvarchar" MaxLength="50" />
+  </EntityType>
+  <EntityType Name="TransactionStatus">
+    <Key>
+      <PropertyRef Name="Id" />
+    </Key>
+    <Property Name="Id" Type="tinyint" StoreGeneratedPattern="Identity" Nullable="false" />
+    <Property Name="StatusText" Type="nvarchar(max)" Nullable="false" />
+  </EntityType>
+  <EntityType Name="TransferConfig">
+    <Key>
+      <PropertyRef Name="ID" />
+    </Key>
+    <Property Name="ID" Type="int" Nullable="false" />
+    <Property Name="NobillSubscritpionType" Type="nvarchar" MaxLength="250" Nullable="false" />
+    <Property Name="TransferCounterName" Type="nvarchar" MaxLength="250" />
+    <Property Name="CreditTransferCustomerService" Type="nvarchar" MaxLength="250" Nullable="false" />
+    <Property Name="DailyTransferCountLimit" Type="int" />
+    <Property Name="MinTransferAmount" Type="money" />
+    <Property Name="TransferFeesEventId" Type="int" />
+    <Property Name="MinPostTransferBalance" Type="money" />
+    <Property Name="MaxTransferAmount" Type="money" />
+    <Property Name="SubscriptionType" Type="nvarchar" MaxLength="50" />
+    <Property Name="TransferToOtherOperator" Type="bit" />
+  </EntityType>
+  <Association Name="FK_ErrorLog_ErrorLog">
+    <End Role="Log" Type="Self.Log" Multiplicity="1" />
+    <End Role="ErrorLog" Type="Self.ErrorLog" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="Log">
+        <PropertyRef Name="LogId" />
+      </Principal>
+      <Dependent Role="ErrorLog">
+        <PropertyRef Name="LogId" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <Association Name="FK_Transaction_TransactionStatus">
+    <End Role="TransactionStatus" Type="Self.TransactionStatus" Multiplicity="1" />
+    <End Role="Transaction" Type="Self.Transaction" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="TransactionStatus">
+        <PropertyRef Name="Id" />
+      </Principal>
+      <Dependent Role="Transaction">
+        <PropertyRef Name="StatusId" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <EntityContainer Name="CreditTransferModelStoreContainer">
+    <EntitySet Name="ErrorLog" EntityType="Self.ErrorLog" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="Log" EntityType="Self.Log" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="Messages" EntityType="Self.Messages" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="Transaction" EntityType="Self.Transaction" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="TransactionStatus" EntityType="Self.TransactionStatus" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="TransferConfig" EntityType="Self.TransferConfig" Schema="dbo" store:Type="Tables" />
+    <AssociationSet Name="FK_ErrorLog_ErrorLog" Association="Self.FK_ErrorLog_ErrorLog">
+      <End Role="Log" EntitySet="Log" />
+      <End Role="ErrorLog" EntitySet="ErrorLog" />
+    </AssociationSet>
+    <AssociationSet Name="FK_Transaction_TransactionStatus" Association="Self.FK_Transaction_TransactionStatus">
+      <End Role="TransactionStatus" EntitySet="TransactionStatus" />
+      <End Role="Transaction" EntitySet="Transaction" />
+    </AssociationSet>
+  </EntityContainer>
+</Schema>

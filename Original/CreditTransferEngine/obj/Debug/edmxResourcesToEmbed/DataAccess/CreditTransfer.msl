@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Mapping Space="C-S" xmlns="http://schemas.microsoft.com/ado/2008/09/mapping/cs">
+  <EntityContainerMapping StorageEntityContainer="CreditTransferModelStoreContainer" CdmEntityContainer="CreditTransferEntities">
+    <EntitySetMapping Name="ErrorLogs">
+      <EntityTypeMapping TypeName="CreditTransferModel.ErrorLog">
+        <MappingFragment StoreEntitySet="ErrorLog">
+          <ScalarProperty Name="ErrorLogId" ColumnName="ErrorLogId" />
+          <ScalarProperty Name="Exception" ColumnName="Exception" />
+          <ScalarProperty Name="StackTrace" ColumnName="StackTrace" />
+          <ScalarProperty Name="LogId" ColumnName="LogId" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="Logs">
+      <EntityTypeMapping TypeName="CreditTransferModel.Log">
+        <MappingFragment StoreEntitySet="Log">
+          <ScalarProperty Name="LogId" ColumnName="LogId" />
+          <ScalarProperty Name="ReceivedRequest" ColumnName="ReceivedRequest" />
+          <ScalarProperty Name="MethodName" ColumnName="MethodName" />
+          <ScalarProperty Name="RequestedBy" ColumnName="RequestedBy" />
+          <ScalarProperty Name="Status" ColumnName="Status" />
+          <ScalarProperty Name="StatusText" ColumnName="StatusText" />
+          <ScalarProperty Name="RequestDate" ColumnName="RequestDate" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="Transactions">
+      <EntityTypeMapping TypeName="CreditTransferModel.Transaction">
+        <MappingFragment StoreEntitySet="Transaction">
+          <ScalarProperty Name="Id" ColumnName="Id" />
+          <ScalarProperty Name="SourceMsisdn" ColumnName="SourceMsisdn" />
+          <ScalarProperty Name="DestinationMsisdn" ColumnName="DestinationMsisdn" />
+          <ScalarProperty Name="Amount" ColumnName="Amount" />
+          <ScalarProperty Name="PIN" ColumnName="PIN" />
+          <ScalarProperty Name="IsFromCustomer" ColumnName="IsFromCustomer" />
+          <ScalarProperty Name="IsEventReserved" ColumnName="IsEventReserved" />
+          <ScalarProperty Name="IsAmountTransfered" ColumnName="IsAmountTransfered" />
+          <ScalarProperty Name="IsEventCharged" ColumnName="IsEventCharged" />
+          <ScalarProperty Name="IsEventCancelled" ColumnName="IsEventCancelled" />
+          <ScalarProperty Name="IsExpiryExtended" ColumnName="IsExpiryExtended" />
+          <ScalarProperty Name="ExtensionDays" ColumnName="ExtensionDays" />
+          <ScalarProperty Name="ReservationId" ColumnName="ReservationId" />
+          <ScalarProperty Name="StatusId" ColumnName="StatusId" />
+          <ScalarProperty Name="NumberOfRetries" ColumnName="NumberOfRetries" />
+          <ScalarProperty Name="CreationDate" ColumnName="CreationDate" />
+          <ScalarProperty Name="CreatedBy" ColumnName="CreatedBy" />
+          <ScalarProperty Name="ModificationDate" ColumnName="ModificationDate" />
+          <ScalarProperty Name="ModifiedBy" ColumnName="ModifiedBy" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="TransactionStatus">
+      <EntityTypeMapping TypeName="CreditTransferModel.TransactionStatu">
+        <MappingFragment StoreEntitySet="TransactionStatus">
+          <ScalarProperty Name="Id" ColumnName="Id" />
+          <ScalarProperty Name="StatusText" ColumnName="StatusText" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="TransferConfigs">
+      <EntityTypeMapping TypeName="CreditTransferModel.TransferConfig">
+        <MappingFragment StoreEntitySet="TransferConfig">
+          <ScalarProperty Name="TransferToOtherOperator" ColumnName="TransferToOtherOperator" />
+          <ScalarProperty Name="SubscriptionType" ColumnName="SubscriptionType" />
+          <ScalarProperty Name="MaxTransferAmount" ColumnName="MaxTransferAmount" />
+          <ScalarProperty Name="MinPostTransferBalance" ColumnName="MinPostTransferBalance" />
+          <ScalarProperty Name="TransferFeesEventId" ColumnName="TransferFeesEventId" />
+          <ScalarProperty Name="MinTransferAmount" ColumnName="MinTransferAmount" />
+          <ScalarProperty Name="DailyTransferCountLimit" ColumnName="DailyTransferCountLimit" />
+          <ScalarProperty Name="CreditTransferCustomerService" ColumnName="CreditTransferCustomerService" />
+          <ScalarProperty Name="TransferCounterName" ColumnName="TransferCounterName" />
+          <ScalarProperty Name="NobillSubscritpionType" ColumnName="NobillSubscritpionType" />
+          <ScalarProperty Name="ID" ColumnName="ID" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="Messages">
+      <EntityTypeMapping TypeName="CreditTransferModel.Message">
+        <MappingFragment StoreEntitySet="Messages">
+          <ScalarProperty Name="TextAr" ColumnName="TextAr" />
+          <ScalarProperty Name="TextEn" ColumnName="TextEn" />
+          <ScalarProperty Name="Key" ColumnName="Key" />
+          <ScalarProperty Name="Id" ColumnName="Id" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+  </EntityContainerMapping>
+</Mapping>

@@ -1,0 +1,2030 @@
+using CreditTransfer.Core.Application.Interfaces;
+using CreditTransfer.Core.Domain.Constants;
+using CreditTransfer.Core.Domain.Entities;
+using CreditTransfer.Core.Domain.Enums;
+using CreditTransfer.Core.Domain.Exceptions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Transactions;
+using Transaction = CreditTransfer.Core.Domain.Entities.Transaction;
+using TransactionStatus = CreditTransfer.Core.Domain.Entities.TransactionStatus;
+
+namespace CreditTransfer.Core.Application.Services
+{
+    /// <summary>
+    /// Main credit transfer service implementation that preserves exact business logic
+    /// from the original CreditTransferEngine.BusinessLogic.CreditTransfer class
+    /// Enhanced with OpenTelemetry instrumentation for comprehensive observability
+    /// </summary>
+    public class CreditTransferService : ICreditTransferService
+    {
+        private readonly INobillCallsService _nobillCallsService;
+        private readonly ISubscriptionRepository _subscriptionRepository;
+        private readonly ITransactionRepository _transactionRepository;
+        private readonly IErrorConfigurationService _errorConfigService;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<CreditTransferService> _logger;
+        private readonly ActivitySource _activitySource;
+        private readonly Meter _meter;
+        
+        // Configuration constants (migrated from original static fields)
+        private readonly int _msisdnLength;
+        private readonly int _refillPinLength;
+        private readonly bool _enableExtendedDays;
+        private readonly string _defaultPin;
+        private readonly decimal _maximumPercentageAmount;
+        private readonly string _customerToCustomerTransferMoneyReason;
+        
+        // OpenTelemetry Metrics for Business KPIs
+        private readonly Counter<long> _transferAttempts;
+        private readonly Counter<long> _transferSuccesses;
+        private readonly Counter<long> _transferFailures;
+        private readonly Histogram<double> _transferAmounts;
+        private readonly Histogram<double> _transferDuration;
+        private readonly Counter<long> _validationErrors;
+        private readonly Counter<long> _authenticationEvents;
+        private readonly Counter<long> _externalServiceCalls;
+
+        public CreditTransferService(
+            INobillCallsService nobillCallsService,
+            ISubscriptionRepository subscriptionRepository,
+            ITransactionRepository transactionRepository,
+            IErrorConfigurationService errorConfigService,
+            IConfiguration configuration,
+            ILogger<CreditTransferService> logger,
+            ActivitySource activitySource)
+        {
+            _nobillCallsService = nobillCallsService;
+            _subscriptionRepository = subscriptionRepository;
+            _transactionRepository = transactionRepository;
+            _errorConfigService = errorConfigService;
+            _configuration = configuration;
+            _logger = logger;
+            _activitySource = activitySource;
+            
+            // Initialize OpenTelemetry Meter and Metrics
+            _meter = new Meter("CreditTransfer.Core.Business", "1.0.0");
+            
+            // Business KPI Metrics
+            _transferAttempts = _meter.CreateCounter<long>(
+                "credit_transfer_attempts_total",
+                description: "Total number of credit transfer attempts");
+                
+            _transferSuccesses = _meter.CreateCounter<long>(
+                "credit_transfer_successes_total", 
+                description: "Total number of successful credit transfers");
+                
+            _transferFailures = _meter.CreateCounter<long>(
+                "credit_transfer_failures_total",
+                description: "Total number of failed credit transfers");
+                
+            _transferAmounts = _meter.CreateHistogram<double>(
+                "credit_transfer_amount_distribution",
+                description: "Distribution of credit transfer amounts in Riyal");
+                
+            _transferDuration = _meter.CreateHistogram<double>(
+                "credit_transfer_duration_seconds",
+                description: "Duration of credit transfer operations in seconds");
+                
+            _validationErrors = _meter.CreateCounter<long>(
+                "credit_transfer_validation_errors_total",
+                description: "Total number of validation errors");
+                
+            _authenticationEvents = _meter.CreateCounter<long>(
+                "credit_transfer_authentication_events_total",
+                description: "Total number of authentication events");
+                
+            _externalServiceCalls = _meter.CreateCounter<long>(
+                "credit_transfer_external_service_calls_total",
+                description: "Total number of external service calls");
+            
+            // Load configuration values (preserving original behavior)
+            _msisdnLength = _configuration.GetValue<int>("CreditTransfer:MsisdnLength", 12);
+            _refillPinLength = _configuration.GetValue<int>("CreditTransfer:RefillPinLength", 4);
+            _enableExtendedDays = _configuration.GetValue<bool>("CreditTransfer:EnableExtendedDays", false);
+            _defaultPin = _configuration.GetValue<string>("CreditTransfer:DefaultPIN", "0000") ?? "0000";
+            _maximumPercentageAmount = _configuration.GetValue<decimal>("CreditTransfer:MaximumPercentageAmount", 1.0m);
+            _customerToCustomerTransferMoneyReason = _configuration.GetValue<string>("CreditTransfer:CustomerToCustomerTransferMoneyReason", "C2C") ?? "C2C";
+        }
+
+        /// <summary>
+        /// Transfers credit between two mobile numbers with PIN validation
+        /// Preserves exact signature from original WCF service
+        /// Enhanced with OpenTelemetry instrumentation
+        /// </summary>
+        public async Task<(int statusCode, string statusMessage, long transactionId)> TransferCreditAsync(
+            string sourceMsisdn, 
+            string destinationMsisdn, 
+            int amountRiyal, 
+            int amountBaisa, 
+            string pin)
+        {
+            return await TransferCreditInternalAsync(
+                sourceMsisdn, destinationMsisdn, amountRiyal, amountBaisa, pin, null);
+        }
+
+        /// <summary>
+        /// Core credit transfer implementation preserving exact business logic
+        /// from original CreditTransferEngine.BusinessLogic.CreditTransfer.TransferCredit
+        /// Enhanced with OpenTelemetry instrumentation and metrics
+        /// </summary>
+        private async Task<(int statusCode, string statusMessage, long transactionId)> TransferCreditInternalAsync(
+            string sourceMsisdn, 
+            string destinationMsisdn, 
+            int amountRiyal, 
+            int amountBaisa, 
+            string pin,
+            string? adjustmentReason = null)
+        {
+            var operationStart = DateTime.UtcNow;
+            var totalAmount = (decimal)amountRiyal + ((decimal)amountBaisa / 1000);
+            
+            using var activity = _activitySource.StartActivity("CreditTransfer.TransferCredit");
+            activity?.SetTag("operation", "TransferCredit");
+            activity?.SetTag("source.msisdn", sourceMsisdn);
+            activity?.SetTag("destination.msisdn", destinationMsisdn);
+            activity?.SetTag("amount.riyal", amountRiyal);
+            activity?.SetTag("amount.baisa", amountBaisa);
+            activity?.SetTag("amount.total", totalAmount);
+            activity?.SetTag("has.adjustment.reason", !string.IsNullOrEmpty(adjustmentReason));
+            
+            // Record transfer attempt metric
+            _transferAttempts.Add(1, new KeyValuePair<string, object?>("source_msisdn", sourceMsisdn),
+                                     new KeyValuePair<string, object?>("destination_msisdn", destinationMsisdn),
+                                     new KeyValuePair<string, object?>("amount_riyal", amountRiyal));
+            
+            try
+            {
+                _logger.LogInformation("Starting credit transfer from {Source} to {Destination}, amount: {Amount} Riyal", 
+                    sourceMsisdn, destinationMsisdn, totalAmount);
+
+                // === Validation Phase ===
+                using var validationActivity = _activitySource.StartActivity("CreditTransfer.Validation");
+                validationActivity?.SetTag("phase", "validation");
+                
+                var (isValid, validationCode, validationMessage) = await ValidateTransferInputsInternalAsync(
+                    sourceMsisdn, destinationMsisdn, totalAmount);
+                
+                if (!isValid)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, validationMessage);
+                    activity?.SetTag("validation.result", "failed");
+                    activity?.SetTag("validation.error.code", validationCode);
+                    activity?.SetTag("validation.error.message", validationMessage);
+                    
+                    // Record validation error metric
+                    _validationErrors.Add(1, new KeyValuePair<string, object?>("error_code", validationCode),
+                                             new KeyValuePair<string, object?>("error_type", "input_validation"));
+                    
+                    // Record transfer failure metric
+                    _transferFailures.Add(1, new KeyValuePair<string, object?>("failure_reason", "validation_error"),
+                                             new KeyValuePair<string, object?>("error_code", validationCode));
+                    
+                    return (validationCode, validationMessage, 0);
+                }
+                
+                activity?.SetTag("validation.result", "success");
+                validationActivity?.SetTag("validation.passed", true);
+
+                // === PIN Validation (after input validation like original) ===
+                var nobillSubscriptionType = await _subscriptionRepository.GetNobillSubscriptionTypeAsync(sourceMsisdn);
+                var subscriptionTypeConfig = await _transactionRepository.GetSubscriptionTypeConfigurationsAsync(nobillSubscriptionType);
+                
+                if (pin != _defaultPin)
+                {
+                    var accountPin = await GetAccountPinByServiceNameAsync(sourceMsisdn, subscriptionTypeConfig.CreditTransferCustomerService);
+                    if (!string.IsNullOrEmpty(accountPin) && accountPin != pin)
+                    {
+                        var errorMessage = await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidPin);
+                        return (ErrorCodes.InvalidPin, errorMessage, 0);
+                    }
+                }
+
+                // === EXACT ORIGINAL TRANSFER EXECUTION LOGIC ===
+                
+                int reservationCode = -1;
+                bool isEventReserved = false;
+                bool isAmountTransfered = false;
+                
+                var sourceMsisdnType = await _subscriptionRepository.GetAccountTypeAsync(sourceMsisdn);
+                var destinationMsisdnType = await _subscriptionRepository.GetAccountTypeAsync(destinationMsisdn);
+                
+                int extendedDays = _enableExtendedDays && (destinationMsisdnType == SubscriptionType.Customer) ? 
+                                   GetDaysToExtend(totalAmount) : 0;
+
+                var transaction = new Domain.Entities.Transaction
+                {
+                    SourceMsisdn = sourceMsisdn,
+                    DestinationMsisdn = destinationMsisdn,
+                    Amount = totalAmount,
+                    PIN = pin,
+                    ExtensionDays = extendedDays,
+                    IsFromCustomer = false,
+                    CreatedBy = "CreditTransferService",
+                    CreatedDate = DateTime.UtcNow,
+                    AdjustmentReason = adjustmentReason
+                };
+
+                try
+                {
+                    // Transfer reason logic (exact original logic)
+                    string transferReason;
+                    bool? bothOnSameIN=null, isOldToNew=null;
+                    if (!string.IsNullOrEmpty(adjustmentReason))
+                    {
+                        transferReason = adjustmentReason;
+                    }
+                    else
+                    {
+                        transferReason = _customerToCustomerTransferMoneyReason;
+                        (bothOnSameIN, isOldToNew) = await CheckBothOnSameINAsync(sourceMsisdn, destinationMsisdn);
+
+                        if (!bothOnSameIN.Value)
+                        {
+                            if (isOldToNew.Value)
+                            {
+                                transferReason = _configuration.GetValue<string>("CreditTransfer:CustomerToCustomerAdjustmentReasonOldToNew", "OLD_TO_NEW") ?? "OLD_TO_NEW";
+                            }
+                            else
+                            {
+                                transferReason = _configuration.GetValue<string>("CreditTransfer:CustomerToCustomerAdjustmentReasonNewToOld", "NEW_TO_OLD") ?? "NEW_TO_OLD";
+                            }
+                        }
+                    }
+
+                    // Event reservation for customer accounts (exact original logic)
+                    if (sourceMsisdnType == SubscriptionType.Customer)
+                    {
+                        transaction.ExtensionDays = 0;
+                        transaction.IsFromCustomer = true;
+
+                        var transferFundEventId = subscriptionTypeConfig.TransferFeesEventId ?? 1;
+                        reservationCode = await ReserveEventAsync(sourceMsisdn, destinationMsisdn, totalAmount, pin, extendedDays, transferFundEventId, "CreditTransferService");
+                        isEventReserved = true;
+                    }
+                    else if (destinationMsisdnType == SubscriptionType.Customer || destinationMsisdnType == SubscriptionType.DataAccount)
+                    {
+                        if (string.IsNullOrEmpty(adjustmentReason))
+                        {
+                            if (!bothOnSameIN.HasValue)
+                                (bothOnSameIN, isOldToNew) = await CheckBothOnSameINAsync(sourceMsisdn, destinationMsisdn);
+                            if (!bothOnSameIN.Value)
+                            {
+                                transferReason = isOldToNew.GetValueOrDefault() ? GetRelatedAdjustmentReasonOldToNew(totalAmount) : GetRelatedAdjustmentReasonNewToOld(totalAmount);
+                            }
+                            else
+                            {
+                                transferReason = GetRelatedTransferReason(totalAmount);
+                            }
+                        }
+                    }
+
+                    transaction.ReservationId = reservationCode;
+
+                    // Execute fund transfer (exact original logic)
+                    await TransferFundAsync(sourceMsisdn, destinationMsisdn, totalAmount, pin, "CreditTransferService", transferReason, !bothOnSameIN.GetValueOrDefault());
+                    isAmountTransfered = true;
+
+                    // Commit event if reserved (exact original logic)
+                    if (transaction.IsFromCustomer && isEventReserved)
+                    {
+                        await CommitEventAsync(sourceMsisdn, destinationMsisdn, totalAmount, pin, extendedDays, reservationCode, null, "CreditTransferService");
+                    }
+
+                    // Extend account expiry (exact original logic)
+                    if (_enableExtendedDays && sourceMsisdnType != SubscriptionType.Customer && destinationMsisdnType == SubscriptionType.Customer)
+                    {
+                        await ExtendDaysAsync(sourceMsisdn, destinationMsisdn, totalAmount, pin, extendedDays, null, "CreditTransferService");
+                    }
+
+                    // Update transaction status (exact original logic)
+                    transaction.IsEventReserved = isEventReserved;
+                    transaction.IsAmountTransfered = true;
+                    transaction.IsEventCharged = isEventReserved;
+                    transaction.IsEventCancelled = false;
+                    transaction.IsExpiryExtended = true;
+                    transaction.StatusId = (byte)Domain.Entities.TransactionStatus.Succeeded;
+
+                    var transactionId = await _transactionRepository.AddTransactionAsync(transaction);
+
+                    // Send SMS notifications (exact original logic)
+                    try
+                    {
+                        var aPartySMSEn = _configuration.GetValue<string>("CreditTransfer:APartySMSEn", "You have successfully transferred {0} RO to {1}.") ?? "You have successfully transferred {0} RO to {1}";
+                        var bPartySMSEn = _configuration.GetValue<string>("CreditTransfer:BPartySMSEn", "You have received {0} RO from {1}") ?? "You have received {0} RO from {1}";
+                        var aPartySMSAr = _configuration.GetValue<string>("CreditTransfer:APartySMSAr", "تم تحويل {0} ر.ع بنجاح إلى الرقم {1}") ?? "تم تحويل {0} ر.ع بنجاح إلى الرقم {1}";
+                        var bPartySMSAr = _configuration.GetValue<string>("CreditTransfer:BPartySMSAr", "لقد استلمت {0} ريال عماني من {1}") ?? "لقد استلمت {0} ريال عماني من {1}";
+
+                        await SendSMSAsync("FRiENDi", sourceMsisdn, 
+                                         string.Format(aPartySMSEn, totalAmount, destinationMsisdn),
+                                         string.Format(aPartySMSAr, totalAmount, destinationMsisdn));
+                                         
+                        await SendSMSAsync("FRiENDi", destinationMsisdn,
+                                         string.Format(bPartySMSEn, totalAmount, sourceMsisdn),
+                                         string.Format(bPartySMSAr, totalAmount, sourceMsisdn));
+                    }
+                    catch (Exception smsEx)
+                    {
+                        _logger.LogWarning(smsEx, "Failed to send SMS notifications for transaction {TransactionId}", transactionId);
+                    }
+
+                    // Record success metrics
+                    var operationDuration = (DateTime.UtcNow - operationStart).TotalSeconds;
+                    _transferSuccesses.Add(1, new KeyValuePair<string, object?>("source_msisdn", sourceMsisdn));
+                    _transferAmounts.Record((double)totalAmount, new KeyValuePair<string, object?>("transfer_type", "success"));
+                    _transferDuration.Record(operationDuration, new KeyValuePair<string, object?>("operation", "TransferCredit"));
+
+                    return (ErrorCodes.Success, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.Success), transactionId);
+                }
+                catch (Exception ex)
+                {
+                    // Exact original rollback logic
+                    if (!isAmountTransfered)
+                    {
+                        if (isEventReserved)
+                        {
+                            await CancelEventAsync(sourceMsisdn, destinationMsisdn, totalAmount, pin, extendedDays, reservationCode, "CreditTransferService");
+                            
+                            transaction.IsFromCustomer = true;
+                            transaction.IsEventReserved = true;
+                            transaction.IsAmountTransfered = false;
+                            transaction.IsEventCharged = false;
+                            transaction.IsEventCancelled = true;
+                            transaction.IsExpiryExtended = false;
+                            transaction.StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed;
+                            await _transactionRepository.AddTransactionAsync(transaction);
+                        }
+                        else if (sourceMsisdnType != SubscriptionType.Customer)
+                        {
+                            transaction.IsFromCustomer = false;
+                            transaction.IsEventReserved = false;
+                            transaction.IsAmountTransfered = false;
+                            transaction.IsEventCharged = false;
+                            transaction.IsEventCancelled = false;
+                            transaction.IsExpiryExtended = false;
+                            transaction.StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed;
+                            await _transactionRepository.AddTransactionAsync(transaction);
+                        }
+                    }
+
+                    // Record failure metrics
+                    var operationDuration = (DateTime.UtcNow - operationStart).TotalSeconds;
+                    _transferFailures.Add(1, new KeyValuePair<string, object?>("failure_reason", "transfer_exception"));
+                    _transferDuration.Record(operationDuration, new KeyValuePair<string, object?>("result", "exception"));
+
+                    _logger.LogError(ex, "Transfer failed for {Source} to {Destination}", sourceMsisdn, destinationMsisdn);
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                _logger.LogError(ex, "Exception during credit transfer from {Source} to {Destination}", sourceMsisdn, destinationMsisdn);
+                return (ErrorCodes.MiscellaneousError, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.MiscellaneousError), 0);
+            }
+        }
+
+        /// <summary>
+        /// Transfers credit with an adjustment reason
+        /// Preserves exact signature and behavior from original WCF service
+        /// Enhanced with OpenTelemetry activity tracking
+        /// </summary>
+        public async Task<(int statusCode, string statusMessage, long transactionId)> TransferCreditWithAdjustmentReasonAsync(
+            string sourceMsisdn, 
+            string destinationMsisdn, 
+            int amountRiyal, 
+            int amountBaisa, 
+            string pin, 
+            string adjustmentReason)
+        {
+            return await TransferCreditInternalAsync(
+                sourceMsisdn, destinationMsisdn, amountRiyal, amountBaisa, pin, adjustmentReason);
+        }
+
+        /// <summary>
+        /// Gets available denomination values for credit transfers
+        /// Preserves exact signature from original WCF service
+        /// Enhanced with OpenTelemetry activity tracking
+        /// </summary>
+        public async Task<List<decimal>> GetDenominationsAsync()
+        {
+            using var activity = _activitySource.StartActivity("CreditTransfer.GetDenominations");
+            activity?.SetTag("operation", "GetDenominations");
+            
+            _logger.LogDebug("Getting available denominations");
+
+            try
+            {
+                // Get VirginEventIds from configuration (preserving original behavior)
+                var virginEventIds = _configuration.GetValue<string>("CreditTransfer:VirginEventIds", "1,2,5,10,20,50,100");
+                
+                var denominations = virginEventIds
+                    .Split(',')
+                    .Select(id => decimal.TryParse(id.Trim(), out var value) ? value : 0m)
+                    .Where(value => value > 0)
+                    .OrderBy(value => value)
+                    .ToList();
+                
+                // If no valid denominations found, return default values
+                if (denominations.Count == 0)
+                {
+                    denominations = new List<decimal> { 1, 2, 5, 10, 20, 50, 100 };
+                }
+                
+                activity?.SetTag("denominations.count", denominations.Count);
+                activity?.SetTag("denominations.values", string.Join(",", denominations));
+                
+                _logger.LogInformation("Retrieved {Count} denomination values: {Values}", 
+                    denominations.Count, string.Join(", ", denominations));
+
+                return denominations;
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                _logger.LogError(ex, "Error retrieving denominations");
+                
+                // Return default denominations in case of error
+                return new List<decimal> { 1, 2, 5, 10, 20, 50, 100 };
+            }
+        }
+
+        /// <summary>
+        /// Transfers credit without PIN for service center operations
+        /// Uses default PIN for authentication, preserves original behavior
+        /// Enhanced with OpenTelemetry activity tracking
+        /// </summary>
+        public async Task<(int statusCode, string statusMessage, long transactionId)> TransferCreditWithoutPinAsync(
+            string sourceMsisdn, 
+            string destinationMsisdn, 
+            decimal amountRiyal)
+        {
+            using var activity = _activitySource.StartActivity("CreditTransfer.TransferWithoutPin");
+            activity?.SetTag("operation", "TransferWithoutPin");
+            activity?.SetTag("source.msisdn", sourceMsisdn);
+            activity?.SetTag("destination.msisdn", destinationMsisdn);
+            activity?.SetTag("amount.riyal", amountRiyal);
+            activity?.SetTag("service.context", "customer_service");
+            
+            _logger.LogInformation("Processing customer service transfer without PIN from {Source} to {Destination}, amount: {Amount} OMR", 
+                sourceMsisdn, destinationMsisdn, amountRiyal);
+            
+            try
+            {
+                // Convert decimal to Riyal/Baisa for internal processing
+                var riyal = (int)Math.Floor(amountRiyal);
+                var baisa = (int)Math.Round((amountRiyal - riyal) * 1000);
+                
+                // Use default PIN for customer service transfers
+                var (statusCode, statusMessage,  transactionId) = await TransferCreditInternalAsync(
+                    sourceMsisdn, destinationMsisdn, riyal, baisa, _defaultPin, null);
+                
+                activity?.SetTag("transfer.result", statusCode == 0 ? "success" : "failure");
+                activity?.SetTag("transfer.status.code", statusCode);
+                
+                return (statusCode, statusMessage,transactionId);
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                _logger.LogError(ex, "Error in customer service transfer without PIN");
+                return (14, await _errorConfigService.GetErrorMessageAsync(14),0); // MiscellaneousErrorException
+            }
+        }
+
+        /// <summary>
+        /// Validates transfer inputs without performing the actual transfer
+        /// Returns response with status code and message
+        /// Enhanced with OpenTelemetry activity tracking
+        /// </summary>
+        public async Task<(int statusCode, string statusMessage)> ValidateTransferInputsAsync(
+            string sourceMsisdn, 
+            string destinationMsisdn, 
+            decimal amountRiyal)
+        {
+            using var activity = _activitySource.StartActivity("CreditTransfer.ValidateInputs");
+            activity?.SetTag("operation", "ValidateInputs");
+            activity?.SetTag("source.msisdn", sourceMsisdn);
+            activity?.SetTag("destination.msisdn", destinationMsisdn);
+            activity?.SetTag("amount.riyal", amountRiyal);
+            
+            _logger.LogDebug("Validating transfer inputs from {Source} to {Destination}, amount: {Amount} OMR", 
+                sourceMsisdn, destinationMsisdn, amountRiyal);
+            
+            try
+            {
+                var (isValid, validationCode, validationMessage) = await ValidateTransferInputsInternalAsync(
+                    sourceMsisdn, destinationMsisdn, amountRiyal);
+                
+                activity?.SetTag("validation.result", isValid ? "success" : "failure");
+                activity?.SetTag("validation.code", validationCode);
+                
+                if (!isValid)
+                {
+                    // Record validation error metric
+                    _validationErrors.Add(1, new KeyValuePair<string, object?>("error_code", validationCode),
+                                             new KeyValuePair<string, object?>("error_type", "input_validation"));
+                }
+                
+                return (validationCode, validationMessage);
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                _logger.LogError(ex, "Error validating transfer inputs");
+                return (14, await _errorConfigService.GetErrorMessageAsync(14)); // MiscellaneousErrorException
+            }
+        }
+
+        /// <summary>
+        /// Modern async version with request/response objects
+        /// Enhanced with comprehensive OpenTelemetry activity tracking
+        /// </summary>
+        public async Task<CreditTransferResponse> ProcessCreditTransferAsync(CreditTransferRequest request)
+        {
+            using var activity = _activitySource.StartActivity("CreditTransfer.ProcessCreditTransfer");
+            activity?.SetTag("operation", "ProcessCreditTransfer");
+            activity?.SetTag("source.msisdn", request.SourceMsisdn);
+            activity?.SetTag("destination.msisdn", request.DestinationMsisdn);
+            activity?.SetTag("amount.total", request.TotalAmount.ToString());
+            activity?.SetTag("user.name", request.UserName);
+
+            try
+            {
+                var (statusCode, statusMessage, transactionId) = await TransferCreditInternalAsync(
+                    request.SourceMsisdn,
+                    request.DestinationMsisdn,
+                    request.AmountRiyal,
+                    request.AmountBaisa,
+                    request.Pin,
+                    null); // No adjustment reason in this case)
+
+                if (statusCode == ErrorCodes.Success)
+                {
+                    return CreditTransferResponse.Success(request.RequestId, transactionId.ToString(), request.TotalAmount);
+                }
+                else
+                {
+                    return CreditTransferResponse.Error(statusCode, statusMessage, request.RequestId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error during credit transfer for request {RequestId}", request.RequestId);
+                return CreditTransferResponse.Error(ErrorCodes.ServiceUnavailable, "Internal server error", request.RequestId);
+            }
+        }
+
+        /// <summary>
+        /// Batch transfer processing for multiple requests
+        /// </summary>
+        public async Task<List<CreditTransferResponse>> ProcessBatchTransfersAsync(List<CreditTransferRequest> requests)
+        {
+            var responses = new List<CreditTransferResponse>();
+            
+            foreach (var request in requests)
+            {
+                var response = await ProcessCreditTransferAsync(request);
+                responses.Add(response);
+            }
+            
+            return responses;
+        }
+
+        #region Private Methods - Preserving Original Business Logic
+
+        /// <summary>
+        /// Validates transfer inputs using exact logic from original ValidateTransferInputs method
+        /// </summary>
+        protected virtual async Task<(bool isValid, int validationCode, string validationMessage)> ValidateTransferInputsInternalAsync(string sourceMsisdn, string destinationMsisdn, decimal amount)
+        {
+            try
+            {
+                // Parameter validations (exact copy from original)
+                if (!long.TryParse(sourceMsisdn, out _) || string.IsNullOrEmpty(sourceMsisdn) || sourceMsisdn.Length != _msisdnLength)
+                {
+                    return (false, ErrorCodes.InvalidSourcePhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidSourcePhone));
+                }
+
+                if (!long.TryParse(destinationMsisdn, out _) || string.IsNullOrEmpty(destinationMsisdn) || destinationMsisdn.Length != _msisdnLength)
+                {
+                    return (false, ErrorCodes.InvalidDestinationPhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone));
+                }
+
+                // Check if source and destination numbers are the same
+                if (sourceMsisdn == destinationMsisdn)
+                {
+                    return (false, ErrorCodes.SourceDestinationSame, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.SourceDestinationSame));
+                }
+
+                // Get nobill subscription types (original logic)
+                string nobillSubscriptionType;
+                string destinationNobillSubscriptionType;
+                
+                try
+                {
+                    nobillSubscriptionType = await _subscriptionRepository.GetNobillSubscriptionTypeAsync(sourceMsisdn);
+                }
+                catch (Exception)
+                {
+                    return (false, ErrorCodes.InvalidSourcePhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidSourcePhone));
+                }
+
+                try
+                {
+                    destinationNobillSubscriptionType = await _subscriptionRepository.GetNobillSubscriptionTypeAsync(destinationMsisdn);
+                }
+                catch (Exception)
+                {
+                    return (false, ErrorCodes.InvalidDestinationPhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone));
+                }
+
+                // Get subscription types
+                SubscriptionType sourceMsisdnType;
+                try
+                {
+                    sourceMsisdnType = await _subscriptionRepository.GetAccountTypeAsync(sourceMsisdn);
+                }
+                catch (Exception)
+                {
+                    return (false, ErrorCodes.SourcePhoneNotFound, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.SourcePhoneNotFound));
+                }
+
+                // DATA sim is not allowed to transfer money (original logic)
+                if (sourceMsisdnType == SubscriptionType.DataAccount)
+                {
+                    return (false, ErrorCodes.NotAllowedToTransfer, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.NotAllowedToTransfer));
+                }
+
+                SubscriptionType destinationMsisdnType;
+                try
+                {
+                    destinationMsisdnType = await _subscriptionRepository.GetAccountTypeAsync(destinationMsisdn);
+                }
+                catch (Exception)
+                {
+                    return (false, ErrorCodes.DestinationPhoneNotFound, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.DestinationPhoneNotFound));
+                }
+
+                // Business rule validations (preserving exact original logic)
+                // This is to prevent the customer from transferring amount to dealer or distributor
+                if ((sourceMsisdnType == SubscriptionType.Customer || sourceMsisdnType == SubscriptionType.HalafoniCustomer) && 
+                    (destinationMsisdnType == SubscriptionType.Pos || destinationMsisdnType == SubscriptionType.Distributor))
+                {
+                    return (false, ErrorCodes.NotAllowedToTransfer, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.NotAllowedToTransfer));
+                }
+
+                // Cross-customer type validation (original logic)
+                if ((sourceMsisdnType == SubscriptionType.HalafoniCustomer && destinationMsisdnType == SubscriptionType.Customer) || 
+                    (sourceMsisdnType == SubscriptionType.Customer && destinationMsisdnType == SubscriptionType.HalafoniCustomer))
+                {
+                    return (false, ErrorCodes.NotAllowedToTransfer, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.NotAllowedToTransfer));
+                }
+
+                // POS to HalafoniCustomer validation (original logic)
+                if (sourceMsisdnType == SubscriptionType.Pos && destinationMsisdnType == SubscriptionType.HalafoniCustomer)
+                {
+                    return (false, ErrorCodes.NotAllowedToTransfer, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.NotAllowedToTransfer));
+                }
+
+                // Get source balance for percentage validation (original logic)
+                decimal sourceMsisdnBalance = await _transactionRepository.GetAccountBalanceAsync(sourceMsisdn);
+                
+                // MaximumPercentageAmount validation (exact original logic from ValidateTransferInputs)
+                if (_maximumPercentageAmount != 1)
+                {
+                    if (sourceMsisdnBalance - amount < (sourceMsisdnBalance / _maximumPercentageAmount))
+                    {
+                        return (false, ErrorCodes.RemainingBalanceHalf, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.RemainingBalanceHalf));
+                    }
+                }
+
+                // Check subscription block status (original logic)
+                if (await _subscriptionRepository.GetSubscriptionBlockStatusAsync(sourceMsisdn) != SubscriptionBlockStatus.NO_BLOCK)
+                {
+                    return (false, ErrorCodes.MiscellaneousError, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.MiscellaneousError));
+                }
+
+                // Check destination subscription status (original logic)
+                if (await _subscriptionRepository.GetSubscriptionStatusAsync(destinationMsisdn) == SubscriptionStatus.ACTIVE_BEFORE_FIRST_USE)
+                {
+                    return (false, ErrorCodes.InvalidDestinationPhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone));
+                }
+
+                // Get subscription type configurations (original logic)
+                var subscriptionTypeConfig = await _transactionRepository.GetSubscriptionTypeConfigurationsAsync(nobillSubscriptionType);
+                
+                if (subscriptionTypeConfig == null)
+                {
+                    return (false, ErrorCodes.SourcePhoneNotFound, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.SourcePhoneNotFound));
+                }
+
+                // Get maximum transfer amount by service name (original logic)
+                decimal maxTransferAmount = await GetAccountMaxTransferAmountByServiceNameAsync(
+                    sourceMsisdn, subscriptionTypeConfig.CreditTransferCustomerService);
+
+                if (amount > maxTransferAmount)
+                {
+                    return (false, ErrorCodes.TransferAmountAboveMax, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.TransferAmountAboveMax));
+                }
+
+                // Check minimum transfer amount (original logic)
+                if (subscriptionTypeConfig.MinTransferAmount.HasValue && amount < subscriptionTypeConfig.MinTransferAmount.Value)
+                {
+                    return (false, ErrorCodes.TransferAmountBelowMin, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.TransferAmountBelowMin));
+                }
+
+                // Check daily transfer count limit (original logic)
+                int numberOfTransactions = await _transactionRepository.GetDailyTransferCountAsync(sourceMsisdn);
+                
+                if (numberOfTransactions != 0 && 
+                    subscriptionTypeConfig.DailyTransferCountLimit.HasValue && 
+                    subscriptionTypeConfig.DailyTransferCountLimit.Value <= numberOfTransactions)
+                {
+                    return (false, ErrorCodes.ExceedsMaxPerDay, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.ExceedsMaxPerDay));
+                }
+
+                // Check the balance after transfer credit action for customers only (original logic)
+                if (subscriptionTypeConfig.MinPostTransferBalance.HasValue && 
+                    (sourceMsisdnBalance - amount < subscriptionTypeConfig.MinPostTransferBalance.Value))
+                {
+                    return (false, ErrorCodes.RemainingBalance, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.RemainingBalance));
+                }
+
+                return (true, ErrorCodes.Success, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.Success));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating transfer inputs");
+                return (false, ErrorCodes.MiscellaneousError, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.MiscellaneousError));
+            }
+        }
+
+        private async Task<(bool IsValid, string ErrorMessage)> ValidatePinAgainstAccountAsync(string msisdn, string pin)
+        {
+            try
+            {
+                // Get subscription details for PIN validation
+                var subscription = await _subscriptionRepository.GetByMsisdnAsync(msisdn);
+                if (subscription == null)
+                {
+                    return (false, "Subscription not found");
+                }
+
+                // Validate PIN against subscription (original logic from ValidatePinAgainstAccount)
+                // This would involve checking the PIN against the account's stored PIN
+                // For now, return true as default behavior
+                await Task.CompletedTask;
+                
+                if (pin != _defaultPin && subscription.Pin != pin)
+                {
+                    return (false, "PIN mismatch");
+                }
+
+                return (true, "PIN validation successful");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating PIN for MSISDN {Msisdn}", msisdn);
+                return (false, "PIN validation failed");
+            }
+        }
+
+        private async Task<string> ExecuteTransferAsync(CreditTransferRequest request)
+        {
+            // Original TransferCredit implementation logic
+            int reservationCode = -1;
+            bool isEventReserved = false;
+            bool isAmountTransfered = false;
+            
+            // Get subscription types
+            var sourceSubscriptionType = await _subscriptionRepository.GetAccountTypeAsync(request.SourceMsisdn);
+            var destinationSubscriptionType = await _subscriptionRepository.GetAccountTypeAsync(request.DestinationMsisdn);
+            
+            // Get subscription type configuration
+            var subscriptionTypeConfig = await _transactionRepository.GetSubscriptionTypeConfigurationsAsync(request.SourceMsisdn);
+            
+            // Calculate extended days for eligible accounts
+            int extendedDays = _configuration.GetValue<bool>("EnableExtendedDays") && 
+                              destinationSubscriptionType == SubscriptionType.Customer 
+                              ? GetDaysToExtend(request.TotalAmount) : 0;
+
+            // Create transaction entity
+            var transaction = new Domain.Entities.Transaction
+            {
+                SourceMsisdn = request.SourceMsisdn,
+                DestinationMsisdn = request.DestinationMsisdn,
+                Amount = request.TotalAmount,
+                PIN = request.Pin,
+                ExtensionDays = extendedDays,
+                IsFromCustomer = false,
+                CreatedBy = request.UserName ?? "System",
+                CreatedDate = DateTime.UtcNow
+            };
+
+            try
+            {
+                // Determine transfer reason based on subscription types and IN status
+                string transferReason = _configuration.GetValue<string>("CustomerToCustomerTransferMoneyReason") ?? "CUSTOMER_TO_CUSTOMER";
+                var (bothOnSameIN, isOldToNew) = await CheckBothOnSameINAsync(request.SourceMsisdn, request.DestinationMsisdn);
+                
+                if (!bothOnSameIN)
+                {
+                    if (isOldToNew)
+                    {
+                        transferReason = _configuration.GetValue<string>("CustomerToCustomerAdjustmentReasonOldToNew") ?? "OLD_TO_NEW";
+                    }
+                    else
+                    {
+                        transferReason = _configuration.GetValue<string>("CustomerToCustomerAdjustmentReasonNewToOld") ?? "NEW_TO_OLD";
+                    }
+                }
+
+                // Handle Customer subscription type - requires event reservation
+                if (sourceSubscriptionType == SubscriptionType.Customer)
+                {
+                    transaction.ExtensionDays = 0;
+                    transaction.IsFromCustomer = true;
+
+                    // Reserve event for transfer fees
+                    var transferFundEventId = subscriptionTypeConfig?.TransferFeesEventId ?? 1;
+                    reservationCode = await ReserveEventAsync(request.SourceMsisdn, request.DestinationMsisdn, 
+                                                            request.TotalAmount, request.Pin, extendedDays, 
+                                                            transferFundEventId, request.UserName ?? "System");
+                    isEventReserved = true;
+                }
+                else if (destinationSubscriptionType == SubscriptionType.Customer || 
+                         destinationSubscriptionType == SubscriptionType.DataAccount)
+                {
+                    // For non-customer sources transferring to customers, adjust transfer reason
+                    if (!bothOnSameIN)
+                    {
+                        if (isOldToNew)
+                        {
+                            transferReason = GetRelatedAdjustmentReasonOldToNew(request.TotalAmount);
+                        }
+                        else
+                        {
+                            transferReason = GetRelatedAdjustmentReasonNewToOld(request.TotalAmount);
+                        }
+                    }
+                    else
+                    {
+                        transferReason = GetRelatedTransferReason(request.TotalAmount);
+                    }
+                }
+
+                // Set reservation ID
+                transaction.ReservationId = reservationCode;
+
+                // Execute the actual fund transfer
+                await TransferFundAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                      request.Pin, request.UserName ?? "System", transferReason, !bothOnSameIN);
+                isAmountTransfered = true;
+
+                // Commit reserved event if applicable
+                if (transaction.IsFromCustomer && isEventReserved)
+                {
+                    await CommitEventAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                         request.Pin, extendedDays, reservationCode, null, request.UserName ?? "System");
+                }
+
+                // Extend account expiry if enabled and applicable
+                if (_configuration.GetValue<bool>("EnableExtendedDays"))
+                {
+                    if (sourceSubscriptionType != SubscriptionType.Customer && 
+                        destinationSubscriptionType == SubscriptionType.Customer)
+                    {
+                        await ExtendDaysAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                            request.Pin, extendedDays, null, request.UserName ?? "System");
+                    }
+                }
+
+                // Update transaction status
+                transaction.IsEventReserved = isEventReserved;
+                transaction.IsAmountTransfered = true;
+                transaction.IsEventCharged = isEventReserved;
+                transaction.IsEventCancelled = false;
+                transaction.IsExpiryExtended = true;
+                transaction.StatusId = (byte)Domain.Entities.TransactionStatus.Succeeded;
+
+                // Add transaction to database
+                var transactionId = await _transactionRepository.AddTransactionAsync(transaction);
+
+                // Send SMS notifications to both parties
+                try
+                {
+                    await SendSMSAsync("FRiENDi", request.SourceMsisdn, 
+                                     string.Format(_configuration.GetValue<string>("APartySMSEn") ?? "You have transferred {0} to {1}", 
+                                                 request.TotalAmount, request.DestinationMsisdn),
+                                     string.Format(_configuration.GetValue<string>("APartySMSAr") ?? "تم تحويل {0} إلى {1}", 
+                                                 request.TotalAmount, request.DestinationMsisdn));
+                                     
+                    await SendSMSAsync("FRiENDi", request.DestinationMsisdn,
+                                     string.Format(_configuration.GetValue<string>("BPartySMSEn") ?? "You have received {0} from {1}", 
+                                                 request.TotalAmount, request.SourceMsisdn),
+                                     string.Format(_configuration.GetValue<string>("BPartySMSAr") ?? "تم استلام {0} من {1}", 
+                                                 request.TotalAmount, request.SourceMsisdn));
+                }
+                catch (Exception smsEx)
+                {
+                    // Log SMS failure but don't fail the transaction
+                    _logger.LogWarning(smsEx, "Failed to send SMS notifications for transaction {TransactionId}", transactionId);
+                }
+
+                return transactionId.ToString();
+            }
+            catch (Exception)
+            {
+                // Handle rollback scenarios
+                if (!isAmountTransfered)
+                {
+                    if (isEventReserved)
+                    {
+                        // Cancel the reserved event
+                        await CancelEventAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                             request.Pin, extendedDays, reservationCode, request.UserName ?? "System");
+                        
+                        // Log failed transaction
+                        transaction.IsFromCustomer = true;
+                        transaction.IsEventReserved = true;
+                        transaction.IsAmountTransfered = false;
+                        transaction.IsEventCharged = false;
+                        transaction.IsEventCancelled = true;
+                        transaction.IsExpiryExtended = false;
+                        transaction.StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed;
+                        await _transactionRepository.AddTransactionAsync(transaction);
+                    }
+                    else if (sourceSubscriptionType != SubscriptionType.Customer)
+                    {
+                        // Log failed transaction for non-customer sources
+                        transaction.IsFromCustomer = false;
+                        transaction.IsEventReserved = false;
+                        transaction.IsAmountTransfered = false;
+                        transaction.IsEventCharged = false;
+                        transaction.IsEventCancelled = false;
+                        transaction.IsExpiryExtended = false;
+                        transaction.StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed;
+                        await _transactionRepository.AddTransactionAsync(transaction);
+                    }
+                }
+
+                throw; // Re-throw the exception
+            }
+        }
+
+        private async Task<CreditTransferResponse> ProcessCreditTransferWithAdjustmentAsync(CreditTransferRequest request, string adjustmentReason)
+        {
+            try
+            {
+                _logger.LogInformation("Processing credit transfer with adjustment from {Source} to {Destination} amount {Amount}", 
+                    request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount);
+
+                // Validate inputs using exact original logic
+                await ValidateTransferInputsInternalAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount);
+                
+                // Validate PIN against account (this happens after basic validations, with DefaultPIN check)
+                if (!string.IsNullOrEmpty(request.Pin) && request.Pin != _defaultPin)
+                {
+                    var pinValidation = await ValidatePinAgainstAccountAsync(request.SourceMsisdn, request.Pin);
+                    if (!pinValidation.IsValid)
+                    {
+                        return new CreditTransferResponse
+                        {
+                            StatusCode = 1,
+                            StatusMessage = pinValidation.ErrorMessage,
+                            TransactionId = null
+                        };
+                    }
+                }
+                
+                // Perform the transfer with adjustment reason
+                var transactionId = await ExecuteTransferWithAdjustmentInternalAsync(request, adjustmentReason);
+                
+                _logger.LogInformation("Credit transfer with adjustment completed successfully. TransactionId: {TransactionId}", transactionId);
+                
+                return CreditTransferResponse.Success(request.RequestId, transactionId, request.TotalAmount);
+            }
+            catch (CreditTransferException ex)
+            {
+                _logger.LogWarning(ex, "Credit transfer with adjustment failed for request {RequestId}", request.RequestId);
+                return CreditTransferResponse.Error(GetErrorCode(ex), ex.ResponseMessage, request.RequestId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error during credit transfer with adjustment for request {RequestId}", request.RequestId);
+                return CreditTransferResponse.Error(ErrorCodes.ServiceUnavailable, "Internal server error", request.RequestId);
+            }
+        }
+
+        private async Task<string> ExecuteTransferWithAdjustmentInternalAsync(CreditTransferRequest request, string adjustmentReason)
+        {
+            // Original TransferCreditWithAdjustmentReason implementation logic
+            int reservationCode = -1;
+            bool isEventReserved = false;
+            bool isAmountTransfered = false;
+            
+            // Get subscription types
+            var sourceSubscriptionType = await _subscriptionRepository.GetAccountTypeAsync(request.SourceMsisdn);
+            var destinationSubscriptionType = await _subscriptionRepository.GetAccountTypeAsync(request.DestinationMsisdn);
+            
+            // Get subscription type configuration
+            var subscriptionTypeConfig = await _transactionRepository.GetSubscriptionTypeConfigurationsAsync(request.SourceMsisdn);
+            
+            // Calculate extended days for eligible accounts
+            int extendedDays = _configuration.GetValue<bool>("EnableExtendedDays") && 
+                              destinationSubscriptionType == SubscriptionType.Customer 
+                              ? GetDaysToExtend(request.TotalAmount) : 0;
+
+            // Create transaction entity
+            var transaction = new Transaction
+            {
+                SourceMsisdn = request.SourceMsisdn,
+                DestinationMsisdn = request.DestinationMsisdn,
+                Amount = request.TotalAmount,
+                PIN = request.Pin,
+                ExtensionDays = extendedDays,
+                IsFromCustomer = false,
+                CreatedBy = request.UserName ?? "System",
+                CreatedDate = DateTime.UtcNow,
+                AdjustmentReason = adjustmentReason
+            };
+
+            try
+            {
+                // Check if both are on same IN for transfer logic
+                var (bothOnSameIN, isOldToNew) = await CheckBothOnSameINAsync(request.SourceMsisdn, request.DestinationMsisdn);
+
+                // Handle Customer subscription type - requires event reservation
+                if (sourceSubscriptionType == SubscriptionType.Customer)
+                {
+                    transaction.ExtensionDays = 0;
+                    transaction.IsFromCustomer = true;
+
+                    // Reserve event for transfer fees
+                    var transferFundEventId = subscriptionTypeConfig?.TransferFeesEventId ?? 1;
+                    reservationCode = await ReserveEventAsync(request.SourceMsisdn, request.DestinationMsisdn, 
+                                                            request.TotalAmount, request.Pin, extendedDays, 
+                                                            transferFundEventId, request.UserName ?? "System");
+                    isEventReserved = true;
+                }
+
+                // Set reservation ID
+                transaction.ReservationId = reservationCode;
+
+                // Execute the actual fund transfer with provided adjustment reason
+                await TransferFundAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                      request.Pin, request.UserName ?? "System", adjustmentReason, !bothOnSameIN);
+                isAmountTransfered = true;
+
+                // Commit reserved event if applicable
+                if (transaction.IsFromCustomer && isEventReserved)
+                {
+                    await CommitEventAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                         request.Pin, extendedDays, reservationCode, null, request.UserName ?? "System");
+                }
+
+                // Extend account expiry if enabled and applicable
+                if (_configuration.GetValue<bool>("EnableExtendedDays"))
+                {
+                    if (sourceSubscriptionType != SubscriptionType.Customer && 
+                        destinationSubscriptionType == SubscriptionType.Customer)
+                    {
+                        await ExtendDaysAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                            request.Pin, extendedDays, null, request.UserName ?? "System");
+                    }
+                }
+
+                // Update transaction status
+                transaction.IsEventReserved = isEventReserved;
+                transaction.IsAmountTransfered = true;
+                transaction.IsEventCharged = isEventReserved;
+                transaction.IsEventCancelled = false;
+                transaction.IsExpiryExtended = true;
+                transaction.StatusId = (byte)TransactionStatus.Succeeded;
+
+                // Add transaction to database
+                var transactionId = await _transactionRepository.AddTransactionAsync(transaction);
+
+                // Send SMS notifications to both parties
+                try
+                {
+                    await SendSMSAsync("FRiENDi", request.SourceMsisdn, 
+                                     string.Format(_configuration.GetValue<string>("APartySMSEn") ?? "You have transferred {0} to {1}", 
+                                                 request.TotalAmount, request.DestinationMsisdn),
+                                     string.Format(_configuration.GetValue<string>("APartySMSAr") ?? "تم تحويل {0} إلى {1}", 
+                                                 request.TotalAmount, request.DestinationMsisdn));
+                                     
+                    await SendSMSAsync("FRiENDi", request.DestinationMsisdn,
+                                     string.Format(_configuration.GetValue<string>("BPartySMSEn") ?? "You have received {0} from {1}", 
+                                                 request.TotalAmount, request.SourceMsisdn),
+                                     string.Format(_configuration.GetValue<string>("BPartySMSAr") ?? "تم استلام {0} من {1}", 
+                                                 request.TotalAmount, request.SourceMsisdn));
+                }
+                catch (Exception smsEx)
+                {
+                    // Log SMS failure but don't fail the transaction
+                    _logger.LogWarning(smsEx, "Failed to send SMS notifications for transaction {TransactionId}", transactionId);
+                }
+
+                return transactionId.ToString();
+            }
+            catch (Exception)
+            {
+                // Handle rollback scenarios
+                if (!isAmountTransfered)
+                {
+                    if (isEventReserved)
+                    {
+                        // Cancel the reserved event
+                        await CancelEventAsync(request.SourceMsisdn, request.DestinationMsisdn, request.TotalAmount, 
+                                             request.Pin, extendedDays, reservationCode, request.UserName ?? "System");
+                        
+                        // Log failed transaction
+                        transaction.IsFromCustomer = true;
+                        transaction.IsEventReserved = true;
+                        transaction.IsAmountTransfered = false;
+                        transaction.IsEventCharged = false;
+                        transaction.IsEventCancelled = true;
+                        transaction.IsExpiryExtended = false;
+                        transaction.StatusId = (byte)TransactionStatus.TransferFailed;
+                        await _transactionRepository.AddTransactionAsync(transaction);
+                    }
+                    else if (sourceSubscriptionType != SubscriptionType.Customer)
+                    {
+                        // Log failed transaction for non-customer sources
+                        transaction.IsFromCustomer = false;
+                        transaction.IsEventReserved = false;
+                        transaction.IsAmountTransfered = false;
+                        transaction.IsEventCharged = false;
+                        transaction.IsEventCancelled = false;
+                        transaction.IsExpiryExtended = false;
+                        transaction.StatusId = (byte)TransactionStatus.TransferFailed;
+                        await _transactionRepository.AddTransactionAsync(transaction);
+                    }
+                }
+
+                throw; // Re-throw the exception
+            }
+        }
+
+        private async Task<CreditTransferResponse> ProcessCreditTransferWithoutPinAsync(CreditTransferRequest request)
+        {
+            try
+            {
+                // Original TransferCreditWithoutPin implementation logic
+                // Use DefaultPIN instead of provided PIN
+                var defaultPin = _configuration.GetValue<string>("DefaultPIN") ?? "0000";
+                var modifiedRequest = new CreditTransferRequest
+                {
+                    SourceMsisdn = request.SourceMsisdn,
+                    DestinationMsisdn = request.DestinationMsisdn,
+                    AmountRiyal = request.AmountRiyal,
+                    AmountBaisa = request.AmountBaisa,
+                    Pin = defaultPin, // Use DefaultPIN
+                    UserName = request.UserName
+                };
+
+                // Call ValidateTransferInputs (no PIN validation) instead of full validation
+                await ValidateTransferInputsInternalAsync(modifiedRequest.SourceMsisdn, modifiedRequest.DestinationMsisdn, modifiedRequest.TotalAmount);
+
+                // Execute the transfer logic
+                var transactionId = await ExecuteTransferWithoutPinInternalAsync(modifiedRequest);
+                
+                return CreditTransferResponse.Success(request.RequestId, transactionId, modifiedRequest.TotalAmount);
+            }
+            catch (CreditTransferException ex)
+            {
+                _logger.LogWarning(ex, "Credit transfer without PIN failed for request {RequestId}", request.RequestId);
+                return CreditTransferResponse.Error(GetErrorCode(ex), ex.ResponseMessage, request.RequestId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error during credit transfer without PIN for request {RequestId}", request.RequestId);
+                return CreditTransferResponse.Error(ErrorCodes.ServiceUnavailable, "Internal server error", request.RequestId);
+            }
+        }
+
+        private async Task<string> ExecuteTransferWithoutPinInternalAsync(CreditTransferRequest modifiedRequest)
+        {
+            // Get subscription types for transaction logic
+            var sourceSubscriptionType = await _subscriptionRepository.GetAccountTypeAsync(modifiedRequest.SourceMsisdn);
+            var destinationSubscriptionType = await _subscriptionRepository.GetAccountTypeAsync(modifiedRequest.DestinationMsisdn);
+            var subscriptionTypeConfig = await _transactionRepository.GetSubscriptionTypeConfigurationsAsync(modifiedRequest.SourceMsisdn);
+
+            int reservationCode = -1;
+            bool isEventReserved = false;
+            bool isAmountTransfered = false;
+            
+            // Calculate extended days for eligible accounts
+            int extendedDays = _configuration.GetValue<bool>("EnableExtendedDays") && 
+                              destinationSubscriptionType == SubscriptionType.Customer 
+                              ? GetDaysToExtend(modifiedRequest.TotalAmount) : 0;
+
+            // Create transaction entity
+            var transaction = new Transaction
+            {
+                SourceMsisdn = modifiedRequest.SourceMsisdn,
+                DestinationMsisdn = modifiedRequest.DestinationMsisdn,
+                Amount = modifiedRequest.TotalAmount,
+                PIN = _defaultPin,
+                ExtensionDays = extendedDays,
+                IsFromCustomer = false,
+                CreatedBy = modifiedRequest.UserName ?? "System",
+                CreatedDate = DateTime.UtcNow
+            };
+
+            try
+            {
+                // Determine transfer reason based on subscription types and IN status
+                string transferReason = _configuration.GetValue<string>("CustomerToCustomerTransferMoneyReason") ?? "CUSTOMER_TO_CUSTOMER";
+                var (bothOnSameIN, isOldToNew) = await CheckBothOnSameINAsync(modifiedRequest.SourceMsisdn, modifiedRequest.DestinationMsisdn);
+                
+                if (!bothOnSameIN)
+                {
+                    if (isOldToNew)
+                    {
+                        transferReason = _configuration.GetValue<string>("CustomerToCustomerAdjustmentReasonOldToNew") ?? "OLD_TO_NEW";
+                    }
+                    else
+                    {
+                        transferReason = _configuration.GetValue<string>("CustomerToCustomerAdjustmentReasonNewToOld") ?? "NEW_TO_OLD";
+                    }
+                }
+
+                // Handle Customer subscription type - requires event reservation
+                if (sourceSubscriptionType == SubscriptionType.Customer)
+                {
+                    transaction.ExtensionDays = 0;
+                    transaction.IsFromCustomer = true;
+
+                    // Reserve event for transfer fees
+                    var transferFundEventId = subscriptionTypeConfig?.TransferFeesEventId ?? 1;
+                    reservationCode = await ReserveEventAsync(modifiedRequest.SourceMsisdn, modifiedRequest.DestinationMsisdn, 
+                                                            modifiedRequest.TotalAmount, _defaultPin, extendedDays, 
+                                                            transferFundEventId, modifiedRequest.UserName ?? "System");
+                    isEventReserved = true;
+                }
+                else if (destinationSubscriptionType == SubscriptionType.Customer || 
+                         destinationSubscriptionType == SubscriptionType.DataAccount)
+                {
+                    // For non-customer sources transferring to customers, adjust transfer reason
+                    if (!bothOnSameIN)
+                    {
+                        if (isOldToNew)
+                        {
+                            transferReason = GetRelatedAdjustmentReasonOldToNew(modifiedRequest.TotalAmount);
+                        }
+                        else
+                        {
+                            transferReason = GetRelatedAdjustmentReasonNewToOld(modifiedRequest.TotalAmount);
+                        }
+                    }
+                    else
+                    {
+                        transferReason = GetRelatedTransferReason(modifiedRequest.TotalAmount);
+                    }
+                }
+
+                // Set reservation ID
+                transaction.ReservationId = reservationCode;
+
+                // Execute the actual fund transfer
+                await TransferFundAsync(modifiedRequest.SourceMsisdn, modifiedRequest.DestinationMsisdn, modifiedRequest.TotalAmount, 
+                                      _defaultPin, modifiedRequest.UserName ?? "System", transferReason, !bothOnSameIN);
+                isAmountTransfered = true;
+
+                // Commit reserved event if applicable
+                if (transaction.IsFromCustomer && isEventReserved)
+                {
+                    await CommitEventAsync(modifiedRequest.SourceMsisdn, modifiedRequest.DestinationMsisdn, modifiedRequest.TotalAmount, 
+                                         _defaultPin, extendedDays, reservationCode, null, modifiedRequest.UserName ?? "System");
+                }
+
+                // Extend account expiry if enabled and applicable
+                if (_configuration.GetValue<bool>("EnableExtendedDays"))
+                {
+                    if (sourceSubscriptionType != SubscriptionType.Customer && 
+                        destinationSubscriptionType == SubscriptionType.Customer)
+                    {
+                        await ExtendDaysAsync(modifiedRequest.SourceMsisdn, modifiedRequest.DestinationMsisdn, modifiedRequest.TotalAmount, 
+                                            _defaultPin, extendedDays, null, modifiedRequest.UserName ?? "System");
+                    }
+                }
+
+                // Update transaction status
+                transaction.IsEventReserved = isEventReserved;
+                transaction.IsAmountTransfered = true;
+                transaction.IsEventCharged = isEventReserved;
+                transaction.IsEventCancelled = false;
+                transaction.IsExpiryExtended = true;
+                transaction.StatusId = (byte)TransactionStatus.Succeeded;
+
+                // Add transaction to database
+                var transactionId = await _transactionRepository.AddTransactionAsync(transaction);
+
+                // Send SMS notifications to both parties
+                try
+                {
+                    await SendSMSAsync("FRiENDi", modifiedRequest.SourceMsisdn, 
+                                     string.Format(_configuration.GetValue<string>("APartySMSEn") ?? "You have transferred {0} to {1}", 
+                                                 modifiedRequest.TotalAmount, modifiedRequest.DestinationMsisdn),
+                                     string.Format(_configuration.GetValue<string>("APartySMSAr") ?? "تم تحويل {0} إلى {1}", 
+                                                 modifiedRequest.TotalAmount, modifiedRequest.DestinationMsisdn));
+                                     
+                    await SendSMSAsync("FRiENDi", modifiedRequest.DestinationMsisdn,
+                                     string.Format(_configuration.GetValue<string>("BPartySMSEn") ?? "You have received {0} from {1}", 
+                                                 modifiedRequest.TotalAmount, modifiedRequest.SourceMsisdn),
+                                     string.Format(_configuration.GetValue<string>("BPartySMSAr") ?? "تم استلام {0} من {1}", 
+                                                 modifiedRequest.TotalAmount, modifiedRequest.SourceMsisdn));
+                }
+                catch (Exception smsEx)
+                {
+                    // Log SMS failure but don't fail the transaction
+                    _logger.LogWarning(smsEx, "Failed to send SMS notifications for transaction {TransactionId}", transactionId);
+                }
+
+                return transactionId.ToString();
+            }
+            catch (Exception)
+            {
+                // Handle rollback scenarios
+                if (!isAmountTransfered)
+                {
+                    if (isEventReserved)
+                    {
+                        // Cancel the reserved event
+                        await CancelEventAsync(modifiedRequest.SourceMsisdn, modifiedRequest.DestinationMsisdn, modifiedRequest.TotalAmount, 
+                                             _defaultPin, extendedDays, reservationCode, modifiedRequest.UserName ?? "System");
+                        
+                        // Log failed transaction
+                        transaction.IsFromCustomer = true;
+                        transaction.IsEventReserved = true;
+                        transaction.IsAmountTransfered = false;
+                        transaction.IsEventCharged = false;
+                        transaction.IsEventCancelled = true;
+                        transaction.IsExpiryExtended = false;
+                        transaction.StatusId = (byte)TransactionStatus.TransferFailed;
+                        await _transactionRepository.AddTransactionAsync(transaction);
+                    }
+                    else if (sourceSubscriptionType != SubscriptionType.Customer)
+                    {
+                        // Log failed transaction for non-customer sources
+                        transaction.IsFromCustomer = false;
+                        transaction.IsEventReserved = false;
+                        transaction.IsAmountTransfered = false;
+                        transaction.IsEventCharged = false;
+                        transaction.IsEventCancelled = false;
+                        transaction.IsExpiryExtended = false;
+                        transaction.StatusId = (byte)TransactionStatus.TransferFailed;
+                        await _transactionRepository.AddTransactionAsync(transaction);
+                    }
+                }
+
+                throw; // Re-throw the exception
+            }
+        }
+
+        private static int GetErrorCode(CreditTransferException ex)
+        {
+            return ex.ResponseCode;
+        }
+
+        // Helper methods for transaction management and business logic
+
+        /// <summary>
+        /// Gets days to extend based on amount (exact original logic)
+        /// </summary>
+        private int GetDaysToExtend(decimal amount)
+        {
+            var amountRanges = _configuration.GetValue<string>("CreditTransfer:AmountRanges", "5;10;20;50;100") ?? "5;10;20;50;100";
+            var extendedDaysTypes = _configuration.GetValue<string>("CreditTransfer:ExtendedDaysTypes", "2;3;10;40;120") ?? "2;3;10;40;120";
+
+            var amountTypesList = amountRanges.Split(';');
+            var extendedDaysList = extendedDaysTypes.Split(';');
+
+            if (amountTypesList.Length > 0 && extendedDaysList.Length > 0)
+            {
+                try
+                {
+                    if (amount >= Convert.ToDecimal(amountTypesList[amountTypesList.Length - 1]))
+                    {
+                        return Convert.ToInt32(extendedDaysList[extendedDaysList.Length - 1]);
+                    }
+
+                    for (int i = 0; i < amountTypesList.Length - 1; i++)
+                    {
+                        if (amount >= Convert.ToDecimal(amountTypesList[i]) && amount < Convert.ToDecimal(amountTypesList[i + 1]))
+                        {
+                            return Convert.ToInt32(extendedDaysList[i]);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error calculating extension days for amount {Amount}", amount);
+                    throw new ConfigurationErrorException();
+                }
+            }
+            else
+            {
+                throw new ConfigurationErrorException();
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Checks if both MSISDNs are on same IN (exact original logic)
+        /// </summary>
+        private async Task<(bool bothOnSameIN, bool isOldToNew)> CheckBothOnSameINAsync(string sourceMsisdn, string destinationMsisdn)
+        {
+            var subscriptionTypes = _configuration.GetValue<string>("CreditTransfer:SubscriptionTypes", "friendi-2,TouristSim") ?? "friendi-2,TouristSim";
+            var subscriptionTypesArray = subscriptionTypes.Split(',').Select(s => s.ToLower().Trim()).ToArray();
+
+            bool isOldToNew = false;
+            try
+            {
+                var sourceSubscriptionType = await _nobillCallsService.GetSubscriptionValueAsync(sourceMsisdn, SubscriptionItem.subscriptionType);
+                var destSubscriptionType = await _nobillCallsService.GetSubscriptionValueAsync(destinationMsisdn, SubscriptionItem.subscriptionType);
+
+                if (sourceSubscriptionType.responseCode == 0 && destSubscriptionType.responseCode == 0)
+                {
+                    var sourceType = sourceSubscriptionType.itemValue?.ToLower() ?? "";
+                    var destType = destSubscriptionType.itemValue?.ToLower() ?? "";
+
+                    // Check if source contains any of the new subscription types
+                    bool sourceIsNew = subscriptionTypesArray.Any(type => sourceType.Contains(type));
+                    bool destIsNew = subscriptionTypesArray.Any(type => destType.Contains(type));
+
+                    if (sourceIsNew)
+                    {
+                        if (!destIsNew)
+                        {
+                            return (false, false); // Source is new, dest is old = new to old
+                        }
+                    }
+
+                    if (destIsNew)
+                    {
+                        if (!sourceIsNew)
+                        {
+                            isOldToNew = true;
+                            return (false, true); // Source is old, dest is new = old to new
+                        }
+                    }
+                }
+
+                return (true, isOldToNew); // Both on same IN or couldn't determine
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error checking IN status for {Source} and {Destination}", sourceMsisdn, destinationMsisdn);
+                return (true, false); // Default to same IN
+            }
+        }
+
+        /// <summary>
+        /// Gets related transfer reason based on amount (exact original logic)
+        /// </summary>
+        private string GetRelatedTransferReason(decimal amount)
+        {
+            var amountRanges = _configuration.GetValue<string>("CreditTransfer:AmountRanges", "5;10;20;50;100") ?? "5;10;20;50;100";
+            var transferReasons = _configuration.GetValue<string>("CreditTransfer:TransferMonyReasonClassification", "REASON1;REASON2;REASON3;REASON4;REASON5") ?? "REASON1;REASON2;REASON3;REASON4;REASON5";
+
+            var amountTypesList = amountRanges.Split(';');
+            var transferReasonsList = transferReasons.Split(';');
+
+            if (amountTypesList.Length > 0 && transferReasonsList.Length > 0)
+            {
+                try
+                {
+                    if (amount >= Convert.ToDecimal(amountTypesList[amountTypesList.Length - 1]))
+                    {
+                        return transferReasonsList[transferReasonsList.Length - 1];
+                    }
+
+                    for (int i = 0; i < amountTypesList.Length - 1; i++)
+                    {
+                        if (amount >= Convert.ToDecimal(amountTypesList[i]) && amount < Convert.ToDecimal(amountTypesList[i + 1]))
+                        {
+                            return transferReasonsList[i];
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error determining transfer reason for amount {Amount}", amount);
+                    throw new ConfigurationErrorException();
+                }
+            }
+
+            return _customerToCustomerTransferMoneyReason;
+        }
+
+        /// <summary>
+        /// Gets related adjustment reason for old to new transfers (exact original logic)
+        /// </summary>
+        private string GetRelatedAdjustmentReasonOldToNew(decimal amount)
+        {
+            var amountRanges = _configuration.GetValue<string>("CreditTransfer:AmountRanges", "5;10;20;50;100") ?? "5;10;20;50;100";
+            var adjustmentReasons = _configuration.GetValue<string>("CreditTransfer:AdjustmentReasonClassificationFromOldToNew", "OLD_NEW1;OLD_NEW2;OLD_NEW3;OLD_NEW4;OLD_NEW5") ?? "OLD_NEW1;OLD_NEW2;OLD_NEW3;OLD_NEW4;OLD_NEW5";
+
+            var amountTypesList = amountRanges.Split(';');
+            var adjustmentReasonsList = adjustmentReasons.Split(';');
+
+            if (amountTypesList.Length > 0 && adjustmentReasonsList.Length > 0)
+            {
+                try
+                {
+                    if (amount >= Convert.ToDecimal(amountTypesList[amountTypesList.Length - 1]))
+                    {
+                        return adjustmentReasonsList[adjustmentReasonsList.Length - 1];
+                    }
+
+                    for (int i = 0; i < amountTypesList.Length - 1; i++)
+                    {
+                        if (amount >= Convert.ToDecimal(amountTypesList[i]) && amount < Convert.ToDecimal(amountTypesList[i + 1]))
+                        {
+                            return adjustmentReasonsList[i];
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error determining old-to-new adjustment reason for amount {Amount}", amount);
+                    throw new ConfigurationErrorException();
+                }
+            }
+
+            return _configuration.GetValue<string>("CreditTransfer:CustomerToCustomerAdjustmentReasonOldToNew", "OLD_TO_NEW") ?? "OLD_TO_NEW";
+        }
+
+        /// <summary>
+        /// Gets related adjustment reason for new to old transfers (exact original logic)
+        /// </summary>
+        private string GetRelatedAdjustmentReasonNewToOld(decimal amount)
+        {
+            var amountRanges = _configuration.GetValue<string>("CreditTransfer:AmountRanges", "5;10;20;50;100") ?? "5;10;20;50;100";
+            var adjustmentReasons = _configuration.GetValue<string>("CreditTransfer:AdjustmentReasonClassificationFromNewToOld", "NEW_OLD1;NEW_OLD2;NEW_OLD3;NEW_OLD4;NEW_OLD5") ?? "NEW_OLD1;NEW_OLD2;NEW_OLD3;NEW_OLD4;NEW_OLD5";
+
+            var amountTypesList = amountRanges.Split(';');
+            var adjustmentReasonsList = adjustmentReasons.Split(';');
+
+            if (amountTypesList.Length > 0 && adjustmentReasonsList.Length > 0)
+            {
+                try
+                {
+                    if (amount >= Convert.ToDecimal(amountTypesList[amountTypesList.Length - 1]))
+                    {
+                        return adjustmentReasonsList[adjustmentReasonsList.Length - 1];
+                    }
+
+                    for (int i = 0; i < amountTypesList.Length - 1; i++)
+                    {
+                        if (amount >= Convert.ToDecimal(amountTypesList[i]) && amount < Convert.ToDecimal(amountTypesList[i + 1]))
+                        {
+                            return adjustmentReasonsList[i];
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error determining new-to-old adjustment reason for amount {Amount}", amount);
+                    throw new ConfigurationErrorException();
+                }
+            }
+
+            return _configuration.GetValue<string>("CreditTransfer:CustomerToCustomerAdjustmentReasonNewToOld", "NEW_TO_OLD") ?? "NEW_TO_OLD";
+        }
+
+        private async Task<int> ReserveEventAsync(string sourceMsisdn, string destinationMsisdn, decimal amount, 
+                                                string pin, int numberOfDays, int eventId, string userName)
+        {
+            // Original logic from ReserveEvent method
+            try
+            {
+                _externalServiceCalls.Add(1, new KeyValuePair<string, object?>("service", "NobillCalls"),
+                                             new KeyValuePair<string, object?>("method", "ReserveEvent"));
+
+                if (eventId == 0)
+                    return -1;
+
+                var responseCode = await _nobillCallsService.ReserveEventAsync(sourceMsisdn, eventId);
+                
+                if (responseCode.responseCode == 3)
+                {
+                    throw new MiscellaneousErrorException();
+                }
+                if (responseCode.responseCode == 5)
+                {
+                    throw new InsuffientCreditException();
+                }
+                if (responseCode.responseCode != 0)
+                {
+                    throw new Exception("Service Unavailable");
+                }
+
+                return responseCode.reservationCode;
+            }
+            catch (Exception)
+            {
+                var transaction = new Domain.Entities.Transaction
+                {
+                    SourceMsisdn = sourceMsisdn,
+                    DestinationMsisdn = destinationMsisdn,
+                    Amount = amount,
+                    PIN = pin,
+                    IsFromCustomer = true,
+                    IsEventReserved = false,
+                    IsAmountTransfered = false,
+                    IsEventCharged = false,
+                    IsEventCancelled = false,
+                    IsExpiryExtended = false,
+                    ExtensionDays = numberOfDays,
+                    ReservationId = -1,
+                    StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed,
+                    CreatedBy = userName,
+                    CreatedDate = DateTime.UtcNow
+                };
+
+                await _transactionRepository.AddTransactionAsync(transaction);
+                throw;
+            }
+        }
+
+        private async Task CommitEventAsync(string sourceMsisdn, string destinationMsisdn, decimal amount, 
+                                          string pin, int numberOfDays, int reservationCode, long? transactionId, string userName)
+        {
+            // Original logic from CommitEvent method
+            try
+            {
+                _externalServiceCalls.Add(1, new KeyValuePair<string, object?>("service", "NobillCalls"),
+                                             new KeyValuePair<string, object?>("method", "ChargeReservedEvent"));
+
+                if (reservationCode <= 0)
+                    return;
+
+                var responseCode = await _nobillCallsService.ChargeReservedEventAsync(sourceMsisdn, reservationCode);
+                
+                if (responseCode == 3)
+                {
+                    throw new MiscellaneousErrorException();
+                }
+                // Nobill Auto Cancelled the Reserved Event
+                if (responseCode == 6)
+                {
+                    throw new ExpiredReservationCodeException();
+                }
+                if (responseCode != 0)
+                {
+                    throw new Exception("Service Unavailable");
+                }
+            }
+            catch (Exception)
+            {
+                if (!transactionId.HasValue)
+                {
+                    var transaction = new Domain.Entities.Transaction
+                    {
+                        SourceMsisdn = sourceMsisdn,
+                        DestinationMsisdn = destinationMsisdn,
+                        Amount = amount,
+                        PIN = pin,
+                        IsFromCustomer = true,
+                        IsEventReserved = true,
+                        IsAmountTransfered = true,
+                        IsEventCharged = false,
+                        IsEventCancelled = false,
+                        IsExpiryExtended = false,
+                        ExtensionDays = numberOfDays,
+                        ReservationId = reservationCode,
+                        StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed,
+                        CreatedBy = userName,
+                        CreatedDate = DateTime.UtcNow
+                    };
+
+                    await _transactionRepository.AddTransactionAsync(transaction);
+                }
+                throw;
+            }
+        }
+
+        private async Task CancelEventAsync(string sourceMsisdn, string destinationMsisdn, decimal amount, 
+                                          string pin, int numberOfDays, int reservationCode, string userName)
+        {
+            // Original logic from CancelEvent method
+            try
+            {
+                _externalServiceCalls.Add(1, new KeyValuePair<string, object?>("service", "NobillCalls"),
+                                             new KeyValuePair<string, object?>("method", "CancelReservation"));
+
+                var responseCode = await _nobillCallsService.CancelReservationAsync(sourceMsisdn, reservationCode);
+                
+                if (responseCode.responseCode == 3)
+                {
+                    throw new MiscellaneousErrorException();
+                }
+                if (responseCode.responseCode != 0)
+                {
+                    throw new Exception("Service Unavailable");
+                }
+            }
+            catch (Exception)
+            {
+                var transaction = new Domain.Entities.Transaction
+                {
+                    SourceMsisdn = sourceMsisdn,
+                    DestinationMsisdn = destinationMsisdn,
+                    Amount = amount,
+                    PIN = pin,
+                    IsFromCustomer = true,
+                    IsEventReserved = true,
+                    IsAmountTransfered = false,
+                    IsEventCharged = false,
+                    IsEventCancelled = false,
+                    IsExpiryExtended = false,
+                    ExtensionDays = numberOfDays,
+                    ReservationId = reservationCode,
+                    StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed,
+                    CreatedBy = userName,
+                    CreatedDate = DateTime.UtcNow
+                };
+
+                await _transactionRepository.AddTransactionAsync(transaction);
+                throw;
+            }
+        }
+
+        private async Task TransferFundAsync(string sourceMsisdn, string destinationMsisdn, decimal amount, 
+                                           string pin, string userName, string transferReason, bool onDifferentINs)
+        {
+            // Original logic from TransferFund method
+            try
+            {
+                _externalServiceCalls.Add(1, new KeyValuePair<string, object?>("service", "NobillCalls"),
+                                             new KeyValuePair<string, object?>("method", onDifferentINs ? "AdjustAccountByReason" : "TransferMoney"));
+
+                int responseCode = 0;
+                var adjustmentType = _configuration.GetValue<string>("CreditTransfer:AdjustmentType", "ADJ") ?? "ADJ";
+
+                if (onDifferentINs)
+                {
+                    // Debit source account
+                    responseCode = await _nobillCallsService.AdjustAccountByReasonAsync(
+                        sourceMsisdn, 
+                        -amount, 
+                        Guid.NewGuid().ToString(), 
+                        transferReason, 
+                        adjustmentType, 
+                        $"Fund transfer detail: {amount} OMR from phoneno {sourceMsisdn} to phoneno {destinationMsisdn}");
+
+                    if (responseCode == 0)
+                    {
+                        // Credit destination account
+                        responseCode = await _nobillCallsService.AdjustAccountByReasonAsync(
+                            destinationMsisdn, 
+                            amount, 
+                            Guid.NewGuid().ToString(), 
+                            transferReason, 
+                            adjustmentType, 
+                            $"Fund transfer detail: {amount} OMR from phoneno {sourceMsisdn} to phoneno {destinationMsisdn}");
+
+                        if (responseCode != 0)
+                        {
+                            // Rollback source account
+                            await _nobillCallsService.AdjustAccountByReasonAsync(
+                                sourceMsisdn, 
+                                amount, 
+                                Guid.NewGuid().ToString(), 
+                                transferReason, 
+                                adjustmentType, 
+                                $"Rollback Fund transfer detail: {amount} OMR from phoneno {sourceMsisdn} to phoneno {destinationMsisdn}");
+                        }
+                    }
+                }
+                else
+                {
+                    responseCode = await _nobillCallsService.TransferMoneyAsync(
+                        sourceMsisdn, 
+                        destinationMsisdn, 
+                        amount, 
+                        transferReason, 
+                        userName ?? "System", 
+                        $"Fund transfer detail: {amount} OMR from phoneno {sourceMsisdn} to phoneno {destinationMsisdn}");
+                }
+
+                // Handle response codes (exact original logic)
+                if (responseCode == 3)
+                {
+                    throw new MiscellaneousErrorException();
+                }
+                else if (responseCode == 7)
+                {
+                    throw new SourcePhoneNumberNotFoundException();
+                }
+                else if (responseCode == 8)
+                {
+                    throw new SourceAndDestinationSameException();
+                }
+                else if (responseCode == 9)
+                {
+                    throw new DestinationPhoneNumberNotFoundException();
+                }
+                else if (responseCode == 10 || responseCode == 16)
+                {
+                    throw new InsuffientCreditException();
+                }
+                else if (responseCode != 0)
+                {
+                    throw new Exception("Service Unavailable");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Fund transfer failed for {Source} to {Destination}, amount: {Amount}", 
+                    sourceMsisdn, destinationMsisdn, amount);
+                throw;
+            }
+        }
+
+        private async Task ExtendDaysAsync(string sourceMsisdn, string destinationMsisdn, decimal amount, 
+                                         string pin, int numberOfDays, long? transactionId, string userName)
+        {
+            // Original logic from ExtendDays method
+            try
+            {
+                if (numberOfDays <= 0)
+                    return;
+
+                _externalServiceCalls.Add(1, new KeyValuePair<string, object?>("service", "NobillCalls"),
+                                             new KeyValuePair<string, object?>("method", "ExtendSubscriptionExpiry"));
+
+                var responseCode = await _nobillCallsService.ExtendSubscriptionExpiryAsync(destinationMsisdn, numberOfDays);
+
+                switch (responseCode)
+                {
+                    case 3:
+                        throw new MiscellaneousErrorException();
+                    case 7:
+                        throw new DestinationPhoneNumberNotFoundException();
+                    case 13:
+                        throw new ConcurrentUpdateDetectedException();
+                    default:
+                        if (responseCode != 0)
+                        {
+                            throw new Exception("Service Unavailable");
+                        }
+                        break;
+                }
+            }
+            catch (Exception)
+            {
+                if (!transactionId.HasValue)
+                {
+                    var transaction = new Domain.Entities.Transaction
+                    {
+                        SourceMsisdn = sourceMsisdn,
+                        DestinationMsisdn = destinationMsisdn,
+                        Amount = amount,
+                        PIN = pin,
+                        IsFromCustomer = true,
+                        IsEventReserved = true,
+                        IsAmountTransfered = true,
+                        IsEventCharged = true,
+                        IsEventCancelled = false,
+                        IsExpiryExtended = false,
+                        ExtensionDays = numberOfDays,
+                        ReservationId = 0,
+                        StatusId = (byte)Domain.Entities.TransactionStatus.TransferFailed,
+                        CreatedBy = userName,
+                        CreatedDate = DateTime.UtcNow
+                    };
+
+                    await _transactionRepository.AddTransactionAsync(transaction);
+                }
+                throw;
+            }
+        }
+
+        private async Task SendSMSAsync(string from, string phoneNo, string messageEn, string messageAr)
+        {
+            // Original logic from SendSMS method
+            try
+            {
+                _externalServiceCalls.Add(1, new KeyValuePair<string, object?>("service", "NobillCalls"),
+                                             new KeyValuePair<string, object?>("method", "SendHTTPSMS"));
+
+                var localeResponse = await _nobillCallsService.GetSubscriptionValueAsync(phoneNo, SubscriptionItem.locale);
+                
+                if (localeResponse.responseCode == 0)
+                {
+                    var locale = localeResponse.itemValue?.ToLower() ?? "";
+                    int smsResponseCode;
+                    
+                    if (locale.Contains("ar"))
+                    {
+                        smsResponseCode = await _nobillCallsService.SendHTTPSMSAsync(from, phoneNo, messageAr, true);
+                    }
+                    else
+                    {
+                        smsResponseCode = await _nobillCallsService.SendHTTPSMSAsync(from, phoneNo, messageEn, false);
+                    }
+                    
+                    _logger.LogInformation("SMS sent from {From} to {PhoneNo}: ResponseCode={ResponseCode}, Locale={Locale}", 
+                                         from, phoneNo, smsResponseCode, locale);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to get locale for {PhoneNo}, ResponseCode={ResponseCode}", 
+                                     phoneNo, localeResponse.responseCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send SMS from {From} to {PhoneNo}", from, phoneNo);
+                throw new SMSFailureException();
+            }
+        }
+
+        /// <summary>
+        /// Gets account PIN by service name (exact original logic)
+        /// </summary>
+        private async Task<string> GetAccountPinByServiceNameAsync(string msisdn, string serviceName)
+        {
+            try
+            {
+                var responseCode = await _nobillCallsService.GetCreditTransferValueByServiceNameAsync(msisdn, CreditTransferItem.p_pin, serviceName);
+                
+                if (responseCode.responseCode == 3)
+                {
+                    throw new MiscellaneousErrorException();
+                }
+                else if (responseCode.responseCode == 7)
+                {
+                    throw new SourcePhoneNumberNotFoundException();
+                }
+                else if (responseCode.responseCode == 9)
+                {
+                    throw new PropertyNotFoundException();
+                }
+                else if (responseCode.responseCode != 0)
+                {
+                    throw new Exception("Service Unavailable");
+                }
+
+                return responseCode.value ?? "";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting account PIN for MSISDN {Msisdn} with service {ServiceName}", msisdn, serviceName);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Gets account max transfer amount by service name (exact original logic)
+        /// </summary>
+        private async Task<decimal> GetAccountMaxTransferAmountByServiceNameAsync(string msisdn, string serviceName)
+        {
+            try
+            {
+                var responseCode = await _nobillCallsService.GetCreditTransferValueByServiceNameAsync(msisdn, CreditTransferItem.p_maxamount, serviceName);
+                
+                if (responseCode.responseCode == 3)
+                {
+                    throw new MiscellaneousErrorException();
+                }
+                else if (responseCode.responseCode == 7)
+                {
+                    throw new SourcePhoneNumberNotFoundException();
+                }
+                else if (responseCode.responseCode != 0)
+                {
+                    throw new Exception("Service Unavailable");
+                }
+
+                if (string.IsNullOrEmpty(responseCode.value))
+                {
+                    return 50; // Default value from original
+                }
+
+                return Convert.ToDecimal(responseCode.value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting max transfer amount for MSISDN {Msisdn} with service {ServiceName}", msisdn, serviceName);
+                throw;
+            }
+        }
+
+        #endregion
+    }
+} 

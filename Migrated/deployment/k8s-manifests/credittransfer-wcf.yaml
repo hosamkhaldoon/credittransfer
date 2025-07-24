@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credittransfer-wcf
+  namespace: credittransfer
+  labels:
+    app: credittransfer-wcf
+    version: v1
+spec:
+  replicas: 1  # Reduced to 1 to avoid conflicts
+  selector:
+    matchLabels:
+      app: credittransfer-wcf
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: credittransfer-wcf
+        version: v1
+      annotations:
+        # Istio annotations for observability
+        sidecar.istio.io/proxyCPU: "10m"
+        sidecar.istio.io/proxyMemory: "128Mi"
+    spec:
+      # Removed hostNetwork to allow proper Istio sidecar injection
+      # External service connectivity will be handled by Istio service mesh and NoBill proxy
+      containers:
+      - name: credittransfer-wcf
+        image: credittransfer-wcf:latest
+        imagePullPolicy: IfNotPresent  # Changed from Never to IfNotPresent
+        ports:
+        - containerPort: 9081
+          name: http
+        envFrom:
+        - configMapRef:
+            name: credittransfer-config
+        env:
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            configMapKeyRef:
+              name: credittransfer-config
+              key: CONNECTION_STRING
+        - name: Redis__ConnectionString
+          valueFrom:
+            configMapKeyRef:
+              name: credittransfer-config
+              key: REDIS_CONNECTION_STRING
+        - name: Keycloak__Authority
+          valueFrom:
+            configMapKeyRef:
+              name: credittransfer-config
+              key: KEYCLOAK_AUTHORITY
+        - name: ASPNETCORE_URLS
+          value: "http://+:9081"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9081
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: credittransfer-wcf
+  namespace: credittransfer
+  labels:
+    app: credittransfer-wcf
+spec:
+  selector:
+    app: credittransfer-wcf
+  ports:
+  - port: 80          # External service port (for other pods)
+    targetPort: 9081  # Container port (where app listens)
+    name: http
+  type: ClusterIP 

@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: credittransfer-config
+  namespace: credittransfer
+data:
+  # Application Configuration
+  ASPNETCORE_ENVIRONMENT: "Production"
+  
+  # Database Configuration
+  ConnectionStrings__DefaultConnection: "Server=external-sql-server-direct,1433;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;MultipleActiveResultSets=True;Encrypt=False;Connection Timeout=60"
+  CONNECTION_STRING: "Server=external-sql-server-direct,1433;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;MultipleActiveResultSets=True;Encrypt=False;Connection Timeout=60"
+  
+  # Redis Configuration 
+  ConnectionStrings__RedisConnection: "redis:6379,password=CreditTransfer2024!"
+  
+  # Keycloak Configuration
+  Keycloak__Realm: "credittransfer"
+  Keycloak__AuthServerUrl: "http://keycloak:8080"
+  Keycloak__Resource: "credittransfer-api"
+  Keycloak__Secret: "credittransfer-secret-2024"
+  Keycloak__ValidateAudience: "false"
+  
+  # OpenTelemetry Configuration
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  OTEL_SERVICE_NAME: "credittransfer-api"
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=credittransfer-api,service.version=1.0.0"
+  
+  # NoBill Service Configuration
+  NobillCalls__ServiceUrl: "http://nobill-service:80/NobillProxy/NobillCalls.asmx"
+  NobillCalls__UserName: "transfercredit"
+  NobillCalls__Password: "p@ssw0rd"
+  NobillCalls__TimeoutSeconds: "60"
+  
+  # Correct configuration keys that NobillCallsService actually uses
+  NobillCalls_ServiceUrl: "http://external-proxy:31080/NobillProxy/NobillCalls.asmx"
+  NobillCalls_UserName: "transfercredit"
+  NobillCalls_Password: "p@ssw0rd"
+  NobillCalls_TimeoutSeconds: "60"
+  
+  # Redis Configuration  
+  REDIS_CONNECTION_STRING: "redis:6379,password=CreditTransfer2024!"
+  REDIS_DATABASE: "0"
+  REDIS_KEY_PREFIX: "CreditTransfer:"
+  REDIS_DEFAULT_CACHE_TIMEOUT_MINUTES: "43200"
+  
+  # Keycloak Configuration (old format for backward compatibility)
+  KEYCLOAK_AUTHORITY: "http://keycloak:8080/realms/credittransfer"
+  KEYCLOAK_AUDIENCE: "credittransfer-api"
+  KEYCLOAK_REQUIRE_HTTPS_METADATA: "false"
+  KEYCLOAK_VALIDATE_AUDIENCE: "false"
+  KEYCLOAK_VALIDATE_ISSUER: "true"
+  KEYCLOAK_VALIDATE_LIFETIME: "true"
+  KEYCLOAK_CLOCK_SKEW: "00:05:00"
+  
+  # Logging Configuration
+  LOGGING_LEVEL_DEFAULT: "Information"
+  LOGGING_LEVEL_CREDITTRANSFER: "Debug"
+  LOGGING_LEVEL_COREWCF: "Debug"
+  LOGGING_LEVEL_ENTITYFRAMEWORK: "Warning"
+  
+  # Health Check Configuration
+  HEALTHCHECKS_UI_EVALUATION_TIME_SECONDS: "60"
+  HEALTHCHECKS_UI_MIN_SECONDS_BETWEEN_FAILURE_NOTIFICATIONS: "300"
+  
+  # OpenTelemetry/Jaeger Configuration
+  JAEGER_ENDPOINT: "http://jaeger:4318"
+  
+  # ASP.NET Core Configuration
+  ASPNETCORE_URLS: "http://+:80" 

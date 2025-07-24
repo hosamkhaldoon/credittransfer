@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions xmlns:wsam="http://www.w3.org/2007/05/addressing/metadata" xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex" xmlns:wsap="http://schemas.xmlsoap.org/ws/2004/08/addressing/policy" xmlns:msc="http://schemas.microsoft.com/ws/2005/12/wsdl/contract" xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:tns="http://tempuri.org/" xmlns:wsa10="http://www.w3.org/2005/08/addressing" xmlns:wsaw="http://www.w3.org/2006/05/addressing/wsdl" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" name="ProductSellingService" targetNamespace="http://tempuri.org/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <wsp:Policy wsu:Id="WSHttpBinding_IProductSellingService_policy">
+    <wsp:ExactlyOne>
+      <wsp:All>
+        <wsaw:UsingAddressing />
+      </wsp:All>
+    </wsp:ExactlyOne>
+  </wsp:Policy>
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://tempuri.org/Imports">
+      <xsd:import schemaLocation="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd0" namespace="http://tempuri.org/" />
+      <xsd:import schemaLocation="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd1" namespace="http://schemas.microsoft.com/2003/10/Serialization/" />
+      <xsd:import schemaLocation="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd2" namespace="http://schemas.datacontract.org/2004/07/Virgin.Activation.DataContract.OM" />
+      <xsd:import schemaLocation="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd3" namespace="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="IProductSellingService_GetAvailableProducts_InputMessage">
+    <wsdl:part name="parameters" element="tns:GetAvailableProducts" />
+  </wsdl:message>
+  <wsdl:message name="IProductSellingService_GetAvailableProducts_OutputMessage">
+    <wsdl:part name="parameters" element="tns:GetAvailableProductsResponse" />
+  </wsdl:message>
+  <wsdl:message name="IProductSellingService_SubmitProductSelling_InputMessage">
+    <wsdl:part name="parameters" element="tns:SubmitProductSelling" />
+  </wsdl:message>
+  <wsdl:message name="IProductSellingService_SubmitProductSelling_OutputMessage">
+    <wsdl:part name="parameters" element="tns:SubmitProductSellingResponse" />
+  </wsdl:message>
+  <wsdl:message name="IProductSellingService_GetUsedAdjustmentReasons_InputMessage">
+    <wsdl:part name="parameters" element="tns:GetUsedAdjustmentReasons" />
+  </wsdl:message>
+  <wsdl:message name="IProductSellingService_GetUsedAdjustmentReasons_OutputMessage">
+    <wsdl:part name="parameters" element="tns:GetUsedAdjustmentReasonsResponse" />
+  </wsdl:message>
+  <wsdl:portType name="IProductSellingService">
+    <wsdl:operation name="GetAvailableProducts">
+      <wsdl:input wsaw:Action="http://tempuri.org/IProductSellingService/GetAvailableProducts" message="tns:IProductSellingService_GetAvailableProducts_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/IProductSellingService/GetAvailableProductsResponse" message="tns:IProductSellingService_GetAvailableProducts_OutputMessage" />
+    </wsdl:operation>
+    <wsdl:operation name="SubmitProductSelling">
+      <wsdl:input wsaw:Action="http://tempuri.org/IProductSellingService/SubmitProductSelling" message="tns:IProductSellingService_SubmitProductSelling_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/IProductSellingService/SubmitProductSellingResponse" message="tns:IProductSellingService_SubmitProductSelling_OutputMessage" />
+    </wsdl:operation>
+    <wsdl:operation name="GetUsedAdjustmentReasons">
+      <wsdl:input wsaw:Action="http://tempuri.org/IProductSellingService/GetUsedAdjustmentReasons" message="tns:IProductSellingService_GetUsedAdjustmentReasons_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/IProductSellingService/GetUsedAdjustmentReasonsResponse" message="tns:IProductSellingService_GetUsedAdjustmentReasons_OutputMessage" />
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="WSHttpBinding_IProductSellingService" type="tns:IProductSellingService">
+    <wsp:PolicyReference URI="#WSHttpBinding_IProductSellingService_policy" />
+    <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="GetAvailableProducts">
+      <soap12:operation soapAction="http://tempuri.org/IProductSellingService/GetAvailableProducts" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SubmitProductSelling">
+      <soap12:operation soapAction="http://tempuri.org/IProductSellingService/SubmitProductSelling" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetUsedAdjustmentReasons">
+      <soap12:operation soapAction="http://tempuri.org/IProductSellingService/GetUsedAdjustmentReasons" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="ProductSellingService">
+    <wsdl:port name="WSHttpBinding_IProductSellingService" binding="tns:WSHttpBinding_IProductSellingService">
+      <soap12:address location="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc/ws" />
+      <wsa10:EndpointReference>
+        <wsa10:Address>http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc/ws</wsa10:Address>
+      </wsa10:EndpointReference>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

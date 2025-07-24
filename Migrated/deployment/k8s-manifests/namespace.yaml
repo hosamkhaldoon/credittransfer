@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: credittransfer
+  labels:
+    istio-injection: enabled
+    app: credittransfer 

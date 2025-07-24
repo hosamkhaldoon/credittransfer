@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ReferenceGroup xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ID="948b541d-0ed6-4441-aa02-705996842ef9" xmlns="urn:schemas-microsoft-com:xml-wcfservicemap">
+  <ClientOptions>
+    <GenerateAsynchronousMethods>false</GenerateAsynchronousMethods>
+    <EnableDataBinding>true</EnableDataBinding>
+    <ExcludedTypes />
+    <ImportXmlTypes>false</ImportXmlTypes>
+    <GenerateInternalTypes>false</GenerateInternalTypes>
+    <GenerateMessageContracts>false</GenerateMessageContracts>
+    <NamespaceMappings />
+    <CollectionMappings>
+      <CollectionMapping TypeName="System.Collections.Generic.List`1" Category="List" />
+    </CollectionMappings>
+    <GenerateSerializableTypes>true</GenerateSerializableTypes>
+    <Serializer>Auto</Serializer>
+    <UseSerializerForFaults>true</UseSerializerForFaults>
+    <ReferenceAllAssemblies>true</ReferenceAllAssemblies>
+    <ReferencedAssemblies />
+    <ReferencedDataContractTypes />
+    <ServiceContractMappings />
+  </ClientOptions>
+  <MetadataSources>
+    <MetadataSource Address="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc" Protocol="http" SourceId="1" />
+  </MetadataSources>
+  <Metadata>
+    <MetadataFile FileName="CreditTransferService31.xsd" MetadataType="Schema" ID="0fa82fb7-2dfe-4dd1-be82-c70af65e2e5f" SourceId="1" SourceUrl="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?xsd=xsd1" />
+    <MetadataFile FileName="CreditTransferService1.disco" MetadataType="Disco" ID="97ec01cf-9bec-4fad-b12e-130998da0c70" SourceId="1" SourceUrl="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?disco" />
+    <MetadataFile FileName="CreditTransferService1.wsdl" MetadataType="Wsdl" ID="c4d5ccca-0a68-4edf-ad9d-927caf709f6c" SourceId="1" SourceUrl="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?wsdl" />
+    <MetadataFile FileName="CreditTransferService32.xsd" MetadataType="Schema" ID="b641e3e0-bce3-4844-b0b1-fe1a53897b42" SourceId="1" SourceUrl="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?xsd=xsd0" />
+    <MetadataFile FileName="CreditTransferService3.xsd" MetadataType="Schema" ID="49de5c8a-c6bf-4184-b634-d9da3ab88234" SourceId="1" SourceUrl="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?xsd=xsd2" />
+  </Metadata>
+  <Extensions>
+    <ExtensionFile FileName="configuration91.svcinfo" Name="configuration91.svcinfo" />
+    <ExtensionFile FileName="configuration.svcinfo" Name="configuration.svcinfo" />
+  </Extensions>
+</ReferenceGroup>

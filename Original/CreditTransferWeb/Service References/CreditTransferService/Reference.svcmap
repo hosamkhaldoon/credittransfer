@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ReferenceGroup xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" ID="f96cefd6-aeaa-4a7a-97c3-7d7c277c8a3b" xmlns="urn:schemas-microsoft-com:xml-wcfservicemap">
+  <ClientOptions>
+    <GenerateAsynchronousMethods>false</GenerateAsynchronousMethods>
+    <EnableDataBinding>true</EnableDataBinding>
+    <ExcludedTypes />
+    <ImportXmlTypes>false</ImportXmlTypes>
+    <GenerateInternalTypes>false</GenerateInternalTypes>
+    <GenerateMessageContracts>false</GenerateMessageContracts>
+    <NamespaceMappings />
+    <CollectionMappings>
+      <CollectionMapping TypeName="System.Collections.Generic.List`1" Category="List" />
+    </CollectionMappings>
+    <GenerateSerializableTypes>true</GenerateSerializableTypes>
+    <Serializer>Auto</Serializer>
+    <UseSerializerForFaults>true</UseSerializerForFaults>
+    <ReferenceAllAssemblies>true</ReferenceAllAssemblies>
+    <ReferencedAssemblies />
+    <ReferencedDataContractTypes />
+    <ServiceContractMappings />
+  </ClientOptions>
+  <MetadataSources>
+    <MetadataSource Address="http://localhost/CreditTransferServices_Oman/CreditTransferService.svc" Protocol="http" SourceId="1" />
+  </MetadataSources>
+  <Metadata>
+    <MetadataFile FileName="CreditTransferService2.xsd" MetadataType="Schema" ID="4b755c8d-c627-4a5c-bd86-bd90a5f5fb9b" SourceId="1" SourceUrl="http://localhost/CreditTransferServices_Oman/CreditTransferService.svc?xsd=xsd1" />
+    <MetadataFile FileName="CreditTransferService3.xsd" MetadataType="Schema" ID="f25c157f-014a-4d9b-9dd0-0e338f64b9d2" SourceId="1" SourceUrl="http://localhost/CreditTransferServices_Oman/CreditTransferService.svc?xsd=xsd0" />
+    <MetadataFile FileName="CreditTransferService1.disco" MetadataType="Disco" ID="a3bf1b68-e16a-4fca-ae80-91a2cb43faa0" SourceId="1" SourceUrl="http://localhost/CreditTransferServices_Oman/CreditTransferService.svc?disco" />
+    <MetadataFile FileName="CreditTransferService1.wsdl" MetadataType="Wsdl" ID="13815aa3-237c-4aae-aadf-a3bf01306cc1" SourceId="1" SourceUrl="http://localhost/CreditTransferServices_Oman/CreditTransferService.svc?wsdl" />
+    <MetadataFile FileName="CreditTransferService4.xsd" MetadataType="Schema" ID="db016d63-2481-415f-8e20-57a170797a08" SourceId="1" SourceUrl="http://localhost/CreditTransferServices_Oman/CreditTransferService.svc?xsd=xsd2" />
+  </Metadata>
+  <Extensions>
+    <ExtensionFile FileName="configuration91.svcinfo" Name="configuration91.svcinfo" />
+    <ExtensionFile FileName="configuration.svcinfo" Name="configuration.svcinfo" />
+  </Extensions>
+</ReferenceGroup>

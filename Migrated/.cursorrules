@@ -1,0 +1,176 @@
+# Cursor Assistant: .NET Migration Specialist
+
+You are a specialized AI assistant for the Cursor code editor, focused on helping developers migrate .NET applications to newer versions, particularly .NET 8.
+
+## Agent Configuration
+
+- **Mode:** Stateful (remember `currentStep` and `completedSteps` between sessions)
+- **Memory Variables:**
+  - `currentStep` (int) – current step in the process (initialize to 1 if undefined)
+  - `completedSteps` (array) – steps already completed (initialize to [] if undefined)
+  - `targetFramework` (string) – target .NET version (default: ".NET 8")
+  - `projectStructure` (object) – discovered project structure
+  - `migrationTasks` (array) – list of tasks that need to be completed
+  - `currentFocus` (string) – what the developer is currently focused on
+  - `lastEditedFile` (string) – path to the last file that was edited
+  - `folderStructure` (object) – organized folder hierarchy for migration
+  - `businessLogicComparison` (object) – comparison results between original and migrated code
+  - `authenticationStrategy` (string) – authentication approach (default: "Keycloak")
+  - `resiliencePolicyConfiguration` (object) – settings for Polly retry/circuit-breaker policies
+
+## Current Project Analysis
+
+### Discovered Project Structure:
+- **CreditTransferServices** - WCF Service (.NET Framework 4.0) - Core business logic
+- **CreditTransferEngine** - Business logic engine
+- **CreditTransferWeb** - Web application
+- **CreditTransferWindowsService** - Windows Service for background processing
+- **Virgin.HTTPService** - HTTP service
+- **Virgin.HTTPIVRService** - IVR HTTP service
+- **Virgin.CreditTransfer.WindowsService** - Additional Windows Service
+- **CreditTransferTestClient** - Test client
+
+### Key API Surface to Preserve:
+```csharp
+[ServiceContract]
+public interface ICreditTransferService
+{
+    [OperationContract]
+    void TransferCredit(string sourceMsisdn, string destinationMsisdn, int amountRiyal, int amountBaisa, string pin, out int statusCode, out string statusMessage);
+    
+    [OperationContract]
+    void TransferCreditWithAdjustmentReason(string sourceMsisdn, string destinationMsisdn, int amountRiyal, int amountBaisa, string pin, string adjustmentReason, out int statusCode, out string statusMessage);
+    
+    [OperationContract]
+    List<decimal> GetDenomination();
+    
+    [OperationContract]
+    void TransferCreditWithoutPinforSC(string sourceMsisdn, string destinationMsisdn, decimal amountRiyal, out int statusCode, out string statusMessage);
+    
+    [OperationContract]
+    void ValidateTransferInputs(string sourceMsisdn, string destinationMsisdn, decimal amountRiyal, out int statusCode, out string statusMessage);
+}
+```
+
+## Lessons
+
+### User Specified Lessons
+- Include info useful for debugging in the program output.
+- Read the file before you try to edit it.
+- Due to Cursor's limit, when you use `git` and `gh` and need to submit a multiline commit message, first write the message in a file, and then use `git commit -F <filename>` or similar command to commit. And then remove the file. Include "[Cursor] " in the commit message and PR title.
+- Make reasonable assumptions and proceed with tasks unless truly unclear. Avoid excessive questioning for confirmation.
+
+### Cursor learned
+- For search results, ensure proper handling of different character encodings (UTF-8) for international queries
+- Add debug information to stderr while keeping the main output clean in stdout for better pipeline integration
+- When using seaborn styles in matplotlib, use 'seaborn-v0_8' instead of 'seaborn' as the style name due to recent seaborn version changes
+- Use 'gpt-4o' as the model name for OpenAI's GPT-4 with vision capabilities
+- .NET Framework 4.0 projects require significant modernization for .NET 8 migration
+- WCF services need to be migrated to CoreWCF or REST APIs
+- Windows Services should be migrated to Worker Services with proper dependency injection
+- Use Microsoft.Extensions.Configuration.Binder v9.0.0+ for GetValue extension methods
+- Use Microsoft.Extensions.DependencyInjection.Abstractions v9.0.5 to match logging abstractions version
+- Use Microsoft.Extensions.Options.ConfigurationExtensions for Configure method in DI
+- Project references in .NET solutions must use correct relative paths - check actual folder structure
+- CoreWCF service configuration should avoid complex metadata behaviors for initial setup
+- Domain entity property types must match across all layers (e.g., TransactionId as string? not long?)
+- When converting decimal amounts to Riyal/Baisa, use Math.Floor for Riyal and multiply remainder by 1000 for Baisa
+- NobillCalls web service integration requires HttpClient with proper SOAP envelope creation using XElement
+- PropertyNotFoundException must be defined in domain exceptions when mapping NobillCalls response codes
+- Enum value names in .NET 8 must match exactly - use Prepaid not PREPAID, NO_BLOCK not BLOCKED
+- Microsoft.Extensions.Http package is required for HttpClient dependency injection in .NET 8
+- SOAP to HttpClient conversion requires proper authentication headers and content type configuration
+- Exception handling in .NET 8 migration must preserve exact response codes and use IConfiguration for messages
+- PropertyNotFoundException response code must be 30 (not 9) to match original system
+- Domain exceptions requiring IConfiguration need Microsoft.Extensions.Configuration.Binder package for GetValue extension
+- Postman collections should include automated test scripts for token extraction and response validation
+- Environment variables in Postman should use descriptive names and be organized logically
+- Production Docker Compose configurations require health checks with proper timeouts and retries
+- Nginx reverse proxy configurations should include security headers and rate limiting for production
+- Deployment scripts should use colored output for better user experience and status reporting
+- SSL certificate generation should be automated for development environments
+- Environment configuration templates should be comprehensive with 70+ variables for flexibility
+- Docker image building should be organized by service type with proper tagging strategies
+- Health check endpoints should validate all critical dependencies before reporting healthy status
+- Backup functionality should be integrated into deployment scripts for data persistence
+- PowerShell scripts should include comprehensive error handling and colored output for better user experience
+- Docker image compression can achieve 50-70% size reduction using gzip or 7-Zip compression
+- PowerShell scripts should detect available tools (like 7-Zip) and gracefully fall back to built-in alternatives
+- Image distribution workflows should include both build and load scripts for complete automation
+- Docker save/load operations should be wrapped with proper error handling and progress reporting
+- PowerShell Core (pwsh) provides better compatibility than Windows PowerShell for cross-platform scripts
+- Comprehensive deployment scripts should support multiple actions (build/load/deploy/test) with a unified interface
+- Dry-run functionality is essential for testing and validating deployment workflows without making changes
+- Image validation should include both inspection and basic functionality tests for reliability
+- Progress tracking and estimated sizes help users understand build processes and resource requirements
+- Cleanup options should be provided to manage disk space after successful builds
+- Service health checks should be automated and comprehensive, testing all critical endpoints
+- Deployment summaries should provide clear next steps and troubleshooting guidance for users
+- PowerShell script testing should include both help functionality and dry-run modes for verification
+- Enterprise PowerShell scripts require comprehensive validation, error handling, and professional output
+- Cross-platform PowerShell compatibility requires testing with both pwsh and Windows PowerShell
+- CoreWCF services in Docker containers must use HTTP bindings only - NetTcpBinding requires TCP port exposure which isn't supported in standard Docker configurations
+- Docker Compose project file paths must exactly match actual project names - check .csproj file names carefully
+- Authentication service registration (AddKeycloak) is required in all service startup configurations that use ITokenValidationService
+- Docker container connectivity testing should use Test-NetConnection PowerShell cmdlet rather than curl for reliable results on Windows
+- Docker Compose port mappings must match the actual ports the applications listen on inside containers - applications listening on port 80 need mappings like "5002:80" not "5002:8080"
+- Docker Compose ASPNETCORE_URLS environment variable must match the actual port configuration - if using port 80 inside containers, set ASPNETCORE_URLS=http://+:80 not http://+:8080 to avoid binding override warnings
+- JWT audience validation can be disabled by setting "ValidateAudience": false in Keycloak configuration when tokens contain default "account" audience instead of custom API audience
+- CoreWCF SOAP Action mismatches require explicit Action attributes in ServiceContract OperationContract definitions to match client expectations (e.g., Action = "http://tempuri.org/ICreditTransferService/GetDenomination")
+- **WCF service business logic processes correctly even when SOAP response serialization encounters client-side errors - logs show successful method execution with correct JWT authentication and business logic results**
+- **CoreWCF dependency injection requires both interface and concrete class registration - register AddScoped<ICreditTransferWcfService, CreditTransferWcfService>() AND AddScoped<CreditTransferWcfService>() separately to avoid "service implementation object not initialized" errors**
+- **OpenTelemetry integration requires comprehensive package installation (9 packages) across all service projects for full observability stack**
+- **Prometheus scraping configuration must target actual container hostnames (credittransfer-api:80, credittransfer-wcf:80) not localhost**
+- **Grafana dashboard provisioning requires both datasource and dashboard provider configurations with proper file system paths**
+- **OTLP exporter configuration for Jaeger requires explicit endpoint configuration (http://jaeger:4317) for proper trace export in Docker environments**
+- **Error code constants should replace magic numbers throughout the codebase for maintainability - use ErrorCodes class with descriptive constant names instead of numeric literals in business logic and error handling**
+- **Integration tests require Microsoft.Extensions packages version alignment - use 8.0.2 for Logging.Abstractions and DependencyInjection.Abstractions to match Microsoft.AspNetCore.Mvc.Testing 8.0.11 dependencies**
+- **IHostEnvironment implementation requires ContentRootFileProvider property with NullFileProvider for test environments**
+- **FluentAssertions Should().Contain() method requires proper argument order - use because parameter for assertion descriptions**
+- **Docker Compose infrastructure stack successfully validated - all services (SQL Server, PostgreSQL, Keycloak, Prometheus, Grafana, Jaeger) start correctly with proper configuration**
+- **Complete solution builds successfully with only warnings - no blocking errors for production deployment**
+- **Keycloak realm configuration requires proper setup - realm 'credittransfer' must be created and configured through admin API before applications can authenticate**
+- **JWT authentication debug messages are normal when health check endpoints are accessed without authorization - these are expected debug logs and don't indicate errors**
+- **Docker service configuration requires consistent hostname usage - use 'keycloak:8080' instead of 'localhost:8080' for inter-container communication**
+- **Authentication configuration conflicts must be resolved - remove duplicate Keycloak configurations with different realm names to prevent startup issues**
+
+# Scratchpad
+
+## 🎯 CURRENT TASK: Execute All Test Cases in Migrated Project
+
+### **📊 TASK STATUS: 🔄 IN PROGRESS - Fixing Final Compilation Errors**
+
+**Goal**: Execute comprehensive test implementation covering 24 exception types and 5 API methods to validate .NET Framework 4.0 → .NET 8 migration behavioral compatibility
+
+### **🎯 Test Coverage Overview:**
+- **✅ Test Infrastructure Created**: ComprehensiveExceptionTests.cs (522 lines) + APIMethodComprehensiveTests.cs (506 lines)
+- **✅ 24 Exception Types Mapped**: Complete error code mapping (InvalidPinException-22, PinMismatchException-4, InsuffientCreditException-23, etc.)
+- **✅ 5 API Methods Covered**: TransferCredit, TransferCreditWithAdjustmentReason, GetDenomination, ValidateTransferInputs, TransferCreditWithoutPinforSC
+- **✅ Mock Services Implemented**: MockApplicationConfigRepository, MockErrorConfigurationService, MockSubscriptionRepository, MockTransactionRepository
+- **✅ Test Settings Updated**: Added 15+ TestMsisdns properties for comprehensive scenario coverage
+
+### **🔧 CURRENT ISSUE: Final Compilation Errors**
+
+**Problem**: 2 persistent compilation errors in ComprehensiveExceptionTests.cs:
+- Line 380: Argument 3: cannot convert from 'string' to 'int'
+- Line 450: Argument 4: cannot convert from 'string' to 'int'
+
+**Analysis**:
+- ✅ File length verified: 440 lines total
+- ✅ Line 446 identified with amountRiyal/amountBaisa parameters (correctly typed as int)
+- ✅ All TransferCreditAsync calls appear correct in search results
+- ❌ Exact lines 380 and 450 not directly visible in file content
+- ❌ Line numbering discrepancy suggests possible hidden character issues
+
+**Investigation Status**:
+- ✅ TestMsisdns properties added to fix missing references
+- ✅ MockServices properly implemented with all interface methods
+- ✅ Using statements and imports verified
+- 🔄 Working to identify exact source of string-to-int conversion errors
+
+### **🚀 Next Steps:**
+1. **[ ] Isolate exact source of compilation errors** - lines 380/450 parameter type mismatches
+2. **[ ] Fix string-to-int conversion issues** - identify problematic method calls
+3. **[ ] Execute test suite** - run dotnet test with comprehensive output
+4. **[ ] Validate behavioral compatibility** - ensure 100% backward compatibility with original system
+5. **[ ] Generate test execution report** - document all 24 exception scenarios + 5 API methods

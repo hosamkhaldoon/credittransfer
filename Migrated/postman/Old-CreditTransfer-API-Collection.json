@@ -1,0 +1,114 @@
+{
+  "info": {
+    "name": "Old-CreditTransfer-API-Collection",
+    "_postman_id": "88f20733-f459-4549-8968-91f8f83c97e9",
+    "description": "NTLM-protected SOAP request for GetDenomination",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "GetDenomination",
+      "request": {
+        "auth": {
+          "type": "ntlm",
+          "ntlm": [
+            {
+              "key": "username",
+              "value": "transfercredit",
+              "type": "string"
+            },
+            {
+              "key": "password",
+              "value": "123",
+              "type": "string"
+            },
+            {
+              "key": "domain",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "text/xml; charset=utf-8"
+          },
+          {
+            "key": "SOAPAction",
+            "value": "http://tempuri.org/ICreditTransferService/GetDenomination"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n                  xmlns:tem=\"http://tempuri.org/\">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <tem:GetDenomination/>\n  </soapenv:Body>\n</soapenv:Envelope>"
+        },
+        "url": {
+          "raw": "http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc",
+          "protocol": "http",
+          "host": [
+            "10.1.132.98"
+          ],
+          "path": [
+            "FRiENDi.CreditTransfer.WcfServices",
+            "CreditTransferService.svc"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "ValidateTransferInputs",
+      "request": {
+        "auth": {
+          "type": "ntlm",
+          "ntlm": [
+            {
+              "key": "username",
+              "value": "transfercredit",
+              "type": "string"
+            },
+            {
+              "key": "password",
+              "value": "123",
+              "type": "string"
+            },
+            {
+              "key": "domain",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "text/xml; charset=utf-8"
+          },
+          {
+            "key": "SOAPAction",
+            "value": "http://tempuri.org/ICreditTransferService/ValidateTransferInputs"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n                  xmlns:tem=\"http://tempuri.org/\">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <tem:ValidateTransferInputs>\n      <tem:sourceMsisdn>9681</tem:sourceMsisdn>\n      <tem:destinationMsisdn>9682</tem:destinationMsisdn>\n      <tem:amountRiyal>1</tem:amountRiyal>\n    </tem:ValidateTransferInputs>\n  </soapenv:Body>\n</soapenv:Envelope>"
+        },
+        "url": {
+          "raw": "http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc",
+          "protocol": "http",
+          "host": [
+            "10.1.132.98"
+          ],
+          "path": [
+            "FRiENDi.CreditTransfer.WcfServices",
+            "CreditTransferService.svc"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

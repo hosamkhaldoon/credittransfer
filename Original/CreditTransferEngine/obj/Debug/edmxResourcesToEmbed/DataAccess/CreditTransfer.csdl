@@ -1,0 +1,124 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Schema Namespace="CreditTransferModel" Alias="Self" xmlns:annotation="http://schemas.microsoft.com/ado/2009/02/edm/annotation" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+  <EntityContainer Name="CreditTransferEntities" annotation:LazyLoadingEnabled="true">
+    <EntitySet Name="ErrorLogs" EntityType="CreditTransferModel.ErrorLog" />
+    <EntitySet Name="Logs" EntityType="CreditTransferModel.Log" />
+    <EntitySet Name="Transactions" EntityType="CreditTransferModel.Transaction" />
+    <EntitySet Name="TransactionStatus" EntityType="CreditTransferModel.TransactionStatu" />
+    <AssociationSet Name="FK_ErrorLog_ErrorLog" Association="CreditTransferModel.FK_ErrorLog_ErrorLog">
+      <End Role="Log" EntitySet="Logs" />
+      <End Role="ErrorLog" EntitySet="ErrorLogs" />
+    </AssociationSet>
+    <AssociationSet Name="FK_Transaction_TransactionStatus" Association="CreditTransferModel.FK_Transaction_TransactionStatus">
+      <End Role="TransactionStatus" EntitySet="TransactionStatus" />
+      <End Role="Transaction" EntitySet="Transactions" />
+    </AssociationSet>
+    <EntitySet Name="TransferConfigs" EntityType="CreditTransferModel.TransferConfig" />
+    <EntitySet Name="Messages" EntityType="CreditTransferModel.Message" />
+  </EntityContainer>
+  <EntityType Name="ErrorLog">
+    <Key>
+      <PropertyRef Name="ErrorLogId" />
+    </Key>
+    <Property Name="ErrorLogId" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+    <Property Name="Exception" Type="String" Nullable="false" MaxLength="Max" Unicode="true" FixedLength="false" />
+    <Property Name="StackTrace" Type="String" Nullable="false" MaxLength="Max" Unicode="true" FixedLength="false" />
+    <Property Name="LogId" Type="Int32" Nullable="false" />
+    <NavigationProperty Name="Log" Relationship="CreditTransferModel.FK_ErrorLog_ErrorLog" FromRole="ErrorLog" ToRole="Log" />
+  </EntityType>
+  <EntityType Name="Log">
+    <Key>
+      <PropertyRef Name="LogId" />
+    </Key>
+    <Property Name="LogId" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+    <Property Name="ReceivedRequest" Type="String" Nullable="false" MaxLength="Max" Unicode="true" FixedLength="false" />
+    <Property Name="MethodName" Type="String" MaxLength="100" Unicode="true" FixedLength="false" />
+    <Property Name="RequestedBy" Type="String" Nullable="false" MaxLength="100" Unicode="true" FixedLength="false" />
+    <Property Name="Status" Type="Int32" />
+    <Property Name="StatusText" Type="String" MaxLength="Max" Unicode="true" FixedLength="false" />
+    <Property Name="RequestDate" Type="DateTime" Nullable="false" Precision="3" />
+    <NavigationProperty Name="ErrorLogs" Relationship="CreditTransferModel.FK_ErrorLog_ErrorLog" FromRole="Log" ToRole="ErrorLog" />
+  </EntityType>
+  <EntityType Name="Transaction">
+    <Key>
+      <PropertyRef Name="Id" />
+    </Key>
+    <Property Name="Id" Type="Int64" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+    <Property Name="SourceMsisdn" Type="String" Nullable="false" MaxLength="20" Unicode="true" FixedLength="false" />
+    <Property Name="DestinationMsisdn" Type="String" Nullable="false" MaxLength="20" Unicode="true" FixedLength="false" />
+    <Property Name="Amount" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+    <Property Name="PIN" Type="String" Nullable="false" MaxLength="6" Unicode="true" FixedLength="false" />
+    <Property Name="IsFromCustomer" Type="Boolean" Nullable="false" />
+    <Property Name="IsEventReserved" Type="Boolean" Nullable="false" />
+    <Property Name="IsAmountTransfered" Type="Boolean" Nullable="false" />
+    <Property Name="IsEventCharged" Type="Boolean" Nullable="false" />
+    <Property Name="IsEventCancelled" Type="Boolean" Nullable="false" />
+    <Property Name="IsExpiryExtended" Type="Boolean" Nullable="false" />
+    <Property Name="ExtensionDays" Type="Int32" Nullable="false" />
+    <Property Name="ReservationId" Type="Int32" Nullable="false" />
+    <Property Name="StatusId" Type="Byte" Nullable="false" />
+    <Property Name="NumberOfRetries" Type="Int32" Nullable="false" />
+    <Property Name="CreationDate" Type="DateTime" Nullable="false" Precision="3" />
+    <Property Name="CreatedBy" Type="String" Nullable="false" MaxLength="50" Unicode="true" FixedLength="false" />
+    <Property Name="ModificationDate" Type="DateTime" Precision="3" />
+    <Property Name="ModifiedBy" Type="String" MaxLength="50" Unicode="true" FixedLength="false" />
+    <NavigationProperty Name="TransactionStatu" Relationship="CreditTransferModel.FK_Transaction_TransactionStatus" FromRole="Transaction" ToRole="TransactionStatus" />
+  </EntityType>
+  <EntityType Name="TransactionStatu">
+    <Key>
+      <PropertyRef Name="Id" />
+    </Key>
+    <Property Name="Id" Type="Byte" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+    <Property Name="StatusText" Type="String" Nullable="false" MaxLength="Max" Unicode="true" FixedLength="false" />
+    <NavigationProperty Name="Transactions" Relationship="CreditTransferModel.FK_Transaction_TransactionStatus" FromRole="TransactionStatus" ToRole="Transaction" />
+  </EntityType>
+  <Association Name="FK_ErrorLog_ErrorLog">
+    <End Role="Log" Type="CreditTransferModel.Log" Multiplicity="1" />
+    <End Role="ErrorLog" Type="CreditTransferModel.ErrorLog" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="Log">
+        <PropertyRef Name="LogId" />
+      </Principal>
+      <Dependent Role="ErrorLog">
+        <PropertyRef Name="LogId" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <Association Name="FK_Transaction_TransactionStatus">
+    <End Role="TransactionStatus" Type="CreditTransferModel.TransactionStatu" Multiplicity="1" />
+    <End Role="Transaction" Type="CreditTransferModel.Transaction" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="TransactionStatus">
+        <PropertyRef Name="Id" />
+      </Principal>
+      <Dependent Role="Transaction">
+        <PropertyRef Name="StatusId" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <EntityType Name="TransferConfig">
+    <Key>
+      <PropertyRef Name="ID" />
+    </Key>
+    <Property Type="Int32" Name="ID" Nullable="false" />
+    <Property Type="String" Name="NobillSubscritpionType" Nullable="false" MaxLength="250" FixedLength="false" Unicode="true" />
+    <Property Type="String" Name="TransferCounterName" MaxLength="250" FixedLength="false" Unicode="true" />
+    <Property Type="String" Name="CreditTransferCustomerService" Nullable="false" MaxLength="250" FixedLength="false" Unicode="true" />
+    <Property Type="Int32" Name="DailyTransferCountLimit" />
+    <Property Type="Decimal" Name="MinTransferAmount" Precision="19" Scale="4" />
+    <Property Type="Int32" Name="TransferFeesEventId" />
+    <Property Type="Decimal" Name="MinPostTransferBalance" Precision="19" Scale="4" />
+    <Property Type="Decimal" Name="MaxTransferAmount" Precision="19" Scale="4" />
+    <Property Type="String" Name="SubscriptionType" MaxLength="50" FixedLength="false" Unicode="true" />
+    <Property Type="Boolean" Name="TransferToOtherOperator" />
+  </EntityType>
+  <EntityType Name="Message">
+    <Key>
+      <PropertyRef Name="Id" />
+    </Key>
+    <Property Type="Int32" Name="Id" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+    <Property Type="String" Name="Key" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+    <Property Type="String" Name="TextEn" Nullable="false" MaxLength="100" FixedLength="false" Unicode="true" />
+    <Property Type="String" Name="TextAr" Nullable="false" MaxLength="100" FixedLength="false" Unicode="true" />
+  </EntityType>
+</Schema>

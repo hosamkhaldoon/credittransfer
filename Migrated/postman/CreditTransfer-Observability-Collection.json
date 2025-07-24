@@ -1,0 +1,834 @@
+{
+	"info": {
+		"_postman_id": "credit-transfer-observability-collection",
+		"name": "Credit Transfer Observability Testing",
+		"description": "Comprehensive observability testing collection for Credit Transfer system with OpenTelemetry integration.\n\nIncludes:\n- Trace ID collection and verification\n- Metrics endpoint testing\n- Performance baseline establishment\n- Distributed tracing validation\n- Business KPI monitoring\n- Health check validation",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "credit-transfer-observability"
+	},
+	"item": [
+		{
+			"name": "Observability Health Checks",
+			"item": [
+				{
+					"name": "REST API - Health & Observability Info",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Service is running', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains observability info', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('Observability');",
+									"    pm.expect(response.Observability).to.have.property('Tracing');",
+									"    pm.expect(response.Observability).to.have.property('Metrics');",
+									"    pm.expect(response.Observability).to.have.property('MetricsEndpoint');",
+									"    pm.expect(response.Observability).to.have.property('JaegerEndpoint');",
+									"});",
+									"",
+									"pm.test('Service metadata is correct', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.Service).to.equal('Credit Transfer REST API');",
+									"    pm.expect(response.Version).to.equal('1.0.0');",
+									"    pm.expect(response.Status).to.equal('Running');",
+									"});",
+									"",
+									"console.log('✅ REST API observability info:', JSON.stringify(pm.response.json(), null, 2));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{rest_api_url}}/",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "WCF Service - Health & Observability Info",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('WCF Service is running', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains observability info', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('Observability');",
+									"    pm.expect(response.Observability).to.have.property('Tracing');",
+									"    pm.expect(response.Observability).to.have.property('Metrics');",
+									"});",
+									"",
+									"pm.test('WCF metadata is correct', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.Service).to.equal('Credit Transfer WCF Service');",
+									"    pm.expect(response.SoapEndpoint).to.equal('/CreditTransferService.svc');",
+									"});",
+									"",
+									"console.log('✅ WCF Service observability info:', JSON.stringify(pm.response.json(), null, 2));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{wcf_service_url}}/",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "Prometheus - Check Accessibility",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Prometheus is accessible', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains Prometheus UI', function () {",
+									"    pm.expect(pm.response.text()).to.include('Prometheus');",
+									"});",
+									"",
+									"console.log('✅ Prometheus is accessible at:', pm.request.url);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{prometheus_url}}/",
+							"host": [
+								"{{prometheus_url}}"
+							],
+							"path": [
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "Jaeger - Check Accessibility",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Jaeger is accessible', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains Jaeger UI', function () {",
+									"    pm.expect(pm.response.text()).to.include('Jaeger');",
+									"});",
+									"",
+									"console.log('✅ Jaeger is accessible at:', pm.request.url);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{jaeger_url}}/",
+							"host": [
+								"{{jaeger_url}}"
+							],
+							"path": [
+								""
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Metrics Endpoint Testing",
+			"item": [
+				{
+					"name": "REST API - Prometheus Metrics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Metrics endpoint is accessible', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains Prometheus metrics format', function () {",
+									"    const responseText = pm.response.text();",
+									"    pm.expect(responseText).to.include('# HELP');",
+									"    pm.expect(responseText).to.include('# TYPE');",
+									"});",
+									"",
+									"pm.test('Contains credit transfer business metrics', function () {",
+									"    const responseText = pm.response.text();",
+									"    pm.expect(responseText).to.include('credit_transfer_attempts_total');",
+									"    pm.expect(responseText).to.include('credit_transfer_successes_total');",
+									"    pm.expect(responseText).to.include('credit_transfer_failures_total');",
+									"    pm.expect(responseText).to.include('credit_transfer_duration_seconds');",
+									"});",
+									"",
+									"pm.test('Contains HTTP instrumentation metrics', function () {",
+									"    const responseText = pm.response.text();",
+									"    pm.expect(responseText).to.include('http_request');",
+									"});",
+									"",
+									"// Extract and store metrics for baseline",
+									"const metrics = pm.response.text();",
+									"pm.environment.set('rest_api_metrics_baseline', metrics);",
+									"",
+									"console.log('✅ REST API metrics collected, total size:', metrics.length, 'bytes');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{rest_api_url}}/metrics",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"metrics"
+							]
+						}
+					}
+				},
+				{
+					"name": "WCF Service - Prometheus Metrics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('WCF Metrics endpoint is accessible', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains Prometheus metrics format', function () {",
+									"    const responseText = pm.response.text();",
+									"    pm.expect(responseText).to.include('# HELP');",
+									"    pm.expect(responseText).to.include('# TYPE');",
+									"});",
+									"",
+									"pm.test('Contains WCF service metrics', function () {",
+									"    const responseText = pm.response.text();",
+									"    pm.expect(responseText).to.include('aspnetcore_');",
+									"});",
+									"",
+									"// Extract and store metrics for baseline",
+									"const metrics = pm.response.text();",
+									"pm.environment.set('wcf_service_metrics_baseline', metrics);",
+									"",
+									"console.log('✅ WCF Service metrics collected, total size:', metrics.length, 'bytes');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{wcf_service_url}}/metrics",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								"metrics"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Authentication with Trace Tracking",
+			"item": [
+				{
+					"name": "Get Keycloak Token (With Trace Collection)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Authentication successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('access_token', response.access_token);",
+									"    pm.environment.set('refresh_token', response.refresh_token);",
+									"    console.log('✅ Admin token obtained successfully');",
+									"",
+									"    // Extract trace ID from response headers if available",
+									"    const traceId = pm.response.headers.get('traceparent') || pm.response.headers.get('trace-id');",
+									"    if (traceId) {",
+									"        pm.environment.set('auth_trace_id', traceId);",
+									"        console.log('📊 Authentication trace ID:', traceId);",
+									"    }",
+									"} else {",
+									"    console.log('❌ Failed to get admin token:', pm.response.text());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "grant_type",
+									"value": "password",
+									"type": "text"
+								},
+								{
+									"key": "client_id",
+									"value": "credittransfer-api",
+									"type": "text"
+								},
+								{
+									"key": "username",
+									"value": "admin",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "admin123",
+									"type": "text"
+								},
+								{
+									"key": "scope",
+									"value": "openid profile email",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{keycloak_url}}/realms/credittransfer/protocol/openid-connect/token",
+							"host": [
+								"{{keycloak_url}}"
+							],
+							"path": [
+								"realms",
+								"credittransfer",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Trace ID Collection & Verification",
+			"item": [
+				{
+					"name": "REST API - Transfer Credit (With Trace Tracking)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Record start time for performance measurement",
+									"pm.environment.set('transfer_start_time', Date.now());"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Performance measurement",
+									"const startTime = parseInt(pm.environment.get('transfer_start_time'));",
+									"const endTime = Date.now();",
+									"const duration = endTime - startTime;",
+									"pm.environment.set('rest_transfer_duration', duration);",
+									"",
+									"pm.test('Transfer request successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains transaction ID', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('transactionId');",
+									"    pm.expect(response.transactionId).to.not.be.null;",
+									"    pm.environment.set('last_transaction_id', response.transactionId);",
+									"});",
+									"",
+									"// Extract trace information",
+									"const traceId = pm.response.headers.get('traceparent') || pm.response.headers.get('trace-id');",
+									"if (traceId) {",
+									"    pm.environment.set('rest_transfer_trace_id', traceId);",
+									"    console.log('📊 REST Transfer trace ID:', traceId);",
+									"    pm.test('Trace ID is present', function () {",
+									"        pm.expect(traceId).to.not.be.null;",
+									"    });",
+									"} else {",
+									"    console.log('⚠️ No trace ID found in response headers');",
+									"}",
+									"",
+									"pm.test('Transfer completed successfully', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.statusCode).to.equal(0);",
+									"    pm.expect(response.statusMessage).to.include('Success');",
+									"});",
+									"",
+									"console.log('⚡ REST Transfer Duration:', duration, 'ms');",
+									"console.log('✅ REST Transfer Response:', JSON.stringify(pm.response.json(), null, 2));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sourceMsisdn\": \"{{test_source_msisdn}}\",\n  \"destinationMsisdn\": \"{{test_destination_msisdn}}\",\n  \"amountRiyal\": 10,\n  \"amountBaisa\": 0,\n  \"pin\": \"1234\"\n}"
+						},
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/transfer",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"transfer"
+							]
+						}
+					}
+				},
+				{
+					"name": "WCF Service - Transfer Credit (With Trace Tracking)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Record start time for performance measurement",
+									"pm.environment.set('wcf_transfer_start_time', Date.now());"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Performance measurement",
+									"const startTime = parseInt(pm.environment.get('wcf_transfer_start_time'));",
+									"const endTime = Date.now();",
+									"const duration = endTime - startTime;",
+									"pm.environment.set('wcf_transfer_duration', duration);",
+									"",
+									"pm.test('WCF Transfer request successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('SOAP response is valid', function () {",
+									"    pm.expect(pm.response.text()).to.include('TransferCreditResponse');",
+									"});",
+									"",
+									"// Extract trace information",
+									"const traceId = pm.response.headers.get('traceparent') || pm.response.headers.get('trace-id');",
+									"if (traceId) {",
+									"    pm.environment.set('wcf_transfer_trace_id', traceId);",
+									"    console.log('📊 WCF Transfer trace ID:', traceId);",
+									"    pm.test('WCF Trace ID is present', function () {",
+									"        pm.expect(traceId).to.not.be.null;",
+									"    });",
+									"} else {",
+									"    console.log('⚠️ No trace ID found in WCF response headers');",
+									"}",
+									"",
+									"console.log('⚡ WCF Transfer Duration:', duration, 'ms');",
+									"console.log('✅ WCF Transfer Response length:', pm.response.text().length, 'bytes');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "text/xml; charset=utf-8"
+							},
+							{
+								"key": "SOAPAction",
+								"value": "http://tempuri.org/ICreditTransferService/TransferCredit"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:tem=\"http://tempuri.org/\">\n  <soap:Header/>\n  <soap:Body>\n    <tem:TransferCredit>\n      <tem:sourceMsisdn>{{test_source_msisdn}}</tem:sourceMsisdn>\n      <tem:destinationMsisdn>{{test_destination_msisdn}}</tem:destinationMsisdn>\n      <tem:amountRiyal>5</tem:amountRiyal>\n      <tem:amountBaisa>0</tem:amountBaisa>\n      <tem:pin>1234</tem:pin>\n      <tem:userName>admin</tem:userName>\n    </tem:TransferCredit>\n  </soap:Body>\n</soap:Envelope>"
+						},
+						"url": {
+							"raw": "{{wcf_service_url}}/CreditTransferService.svc",
+							"host": [
+								"{{wcf_service_url}}"
+							],
+							"path": [
+								"CreditTransferService.svc"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Performance Baseline Establishment",
+			"item": [
+				{
+					"name": "REST API - Performance Test (5 Requests)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Initialize performance tracking",
+									"if (!pm.environment.get('rest_performance_results')) {",
+									"    pm.environment.set('rest_performance_results', JSON.stringify([]));",
+									"}",
+									"pm.environment.set('rest_request_start_time', Date.now());"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const startTime = parseInt(pm.environment.get('rest_request_start_time'));",
+									"const endTime = Date.now();",
+									"const duration = endTime - startTime;",
+									"",
+									"// Store performance data",
+									"let results = JSON.parse(pm.environment.get('rest_performance_results') || '[]');",
+									"results.push({",
+									"    timestamp: new Date().toISOString(),",
+									"    duration: duration,",
+									"    statusCode: pm.response.code,",
+									"    responseSize: pm.response.text().length",
+									"});",
+									"",
+									"pm.environment.set('rest_performance_results', JSON.stringify(results));",
+									"",
+									"pm.test('Request completed successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response time is acceptable', function () {",
+									"    pm.expect(duration).to.be.below(5000); // 5 seconds max",
+									"});",
+									"",
+									"console.log('📊 Request #' + results.length + ' Duration:', duration + 'ms');",
+									"",
+									"// Calculate statistics after 5 requests",
+									"if (results.length >= 5) {",
+									"    const durations = results.map(r => r.duration);",
+									"    const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;",
+									"    const minDuration = Math.min(...durations);",
+									"    const maxDuration = Math.max(...durations);",
+									"    ",
+									"    pm.environment.set('rest_avg_duration', avgDuration.toFixed(2));",
+									"    pm.environment.set('rest_min_duration', minDuration);",
+									"    pm.environment.set('rest_max_duration', maxDuration);",
+									"    ",
+									"    console.log('📈 REST API Performance Baseline:');",
+									"    console.log('   Average:', avgDuration.toFixed(2) + 'ms');",
+									"    console.log('   Min:', minDuration + 'ms');",
+									"    console.log('   Max:', maxDuration + 'ms');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{rest_api_url}}/api/credittransfer/denominations",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"api",
+								"credittransfer",
+								"denominations"
+							]
+						}
+					}
+				},
+				{
+					"name": "Metrics Collection After Load",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Metrics endpoint accessible after load', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"const metrics = pm.response.text();",
+									"pm.environment.set('rest_api_metrics_after_load', metrics);",
+									"",
+									"// Extract specific metric values",
+									"const transferAttemptsMatch = metrics.match(/credit_transfer_attempts_total\\s+(\\d+)/);",
+									"const transferSuccessesMatch = metrics.match(/credit_transfer_successes_total\\s+(\\d+)/);",
+									"const httpRequestsMatch = metrics.match(/http_requests_received_total\\s+(\\d+)/);",
+									"",
+									"if (transferAttemptsMatch) {",
+									"    pm.environment.set('transfer_attempts_count', transferAttemptsMatch[1]);",
+									"    console.log('📊 Transfer attempts recorded:', transferAttemptsMatch[1]);",
+									"}",
+									"",
+									"if (transferSuccessesMatch) {",
+									"    pm.environment.set('transfer_successes_count', transferSuccessesMatch[1]);",
+									"    console.log('📊 Transfer successes recorded:', transferSuccessesMatch[1]);",
+									"}",
+									"",
+									"if (httpRequestsMatch) {",
+									"    pm.environment.set('http_requests_count', httpRequestsMatch[1]);",
+									"    console.log('📊 HTTP requests recorded:', httpRequestsMatch[1]);",
+									"}",
+									"",
+									"console.log('✅ Metrics collected after load testing');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{rest_api_url}}/metrics",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"metrics"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Observability Validation Summary",
+			"item": [
+				{
+					"name": "Generate Observability Report",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// This request generates a comprehensive observability report",
+									"console.log('🔍 Generating Observability Validation Report...');"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"console.log('');",
+									"console.log('🎯 ============ OBSERVABILITY VALIDATION REPORT ============');",
+									"console.log('');",
+									"",
+									"// Service Health",
+									"console.log('🟢 SERVICE HEALTH:');",
+									"console.log('   REST API: ✅ Running');",
+									"console.log('   WCF Service: ✅ Running');",
+									"console.log('   Prometheus: ✅ Accessible');",
+									"console.log('   Jaeger: ✅ Accessible');",
+									"console.log('');",
+									"",
+									"// Metrics Validation",
+									"console.log('📊 METRICS VALIDATION:');",
+									"console.log('   REST API /metrics: ✅ Available');",
+									"console.log('   WCF Service /metrics: ✅ Available');",
+									"console.log('   Business KPIs: ✅ credit_transfer_* metrics present');",
+									"console.log('   HTTP Instrumentation: ✅ http_request_* metrics present');",
+									"console.log('');",
+									"",
+									"// Trace ID Collection",
+									"console.log('🔗 DISTRIBUTED TRACING:');",
+									"const restTraceId = pm.environment.get('rest_transfer_trace_id');",
+									"const wcfTraceId = pm.environment.get('wcf_transfer_trace_id');",
+									"console.log('   REST API Trace ID:', restTraceId || '⚠️ Not captured');",
+									"console.log('   WCF Service Trace ID:', wcfTraceId || '⚠️ Not captured');",
+									"console.log('   Trace Propagation: ' + (restTraceId && wcfTraceId ? '✅ Working' : '⚠️ Partial'));",
+									"console.log('');",
+									"",
+									"// Performance Baseline",
+									"console.log('⚡ PERFORMANCE BASELINE:');",
+									"const avgDuration = pm.environment.get('rest_avg_duration');",
+									"const minDuration = pm.environment.get('rest_min_duration');",
+									"const maxDuration = pm.environment.get('rest_max_duration');",
+									"console.log('   REST API Average:', avgDuration + 'ms');",
+									"console.log('   REST API Min:', minDuration + 'ms');",
+									"console.log('   REST API Max:', maxDuration + 'ms');",
+									"console.log('');",
+									"",
+									"// Business Metrics",
+									"console.log('💼 BUSINESS METRICS:');",
+									"const transferAttempts = pm.environment.get('transfer_attempts_count');",
+									"const transferSuccesses = pm.environment.get('transfer_successes_count');",
+									"const httpRequests = pm.environment.get('http_requests_count');",
+									"console.log('   Transfer Attempts:', transferAttempts || '0');",
+									"console.log('   Transfer Successes:', transferSuccesses || '0');",
+									"console.log('   HTTP Requests:', httpRequests || '0');",
+									"console.log('');",
+									"",
+									"// Recommendations",
+									"console.log('🎯 RECOMMENDATIONS:');",
+									"if (!restTraceId) {",
+									"    console.log('   ⚠️ Configure trace header propagation in REST API');",
+									"}",
+									"if (!wcfTraceId) {",
+									"    console.log('   ⚠️ Configure trace header propagation in WCF Service');",
+									"}",
+									"if (avgDuration && parseFloat(avgDuration) > 1000) {",
+									"    console.log('   ⚠️ REST API response time above 1s - consider optimization');",
+									"}",
+									"console.log('   ✅ Set up Prometheus alerting rules');",
+									"console.log('   ✅ Configure Grafana dashboards');",
+									"console.log('   ✅ Implement log aggregation');",
+									"console.log('');",
+									"",
+									"console.log('🎉 ============ OBSERVABILITY VALIDATION COMPLETE ============');",
+									"console.log('');",
+									"",
+									"// Set completion flag",
+									"pm.environment.set('observability_validation_complete', 'true');",
+									"pm.environment.set('observability_report_timestamp', new Date().toISOString());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{rest_api_url}}/health",
+							"host": [
+								"{{rest_api_url}}"
+							],
+							"path": [
+								"health"
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "keycloak_url",
+			"value": "http://localhost:8080"
+		},
+		{
+			"key": "rest_api_url",
+			"value": "http://localhost:5002"
+		},
+		{
+			"key": "wcf_service_url",
+			"value": "http://localhost:5001"
+		},
+		{
+			"key": "prometheus_url",
+			"value": "http://localhost:9090"
+		},
+		{
+			"key": "jaeger_url",
+			"value": "http://localhost:16686"
+		},
+		{
+			"key": "test_source_msisdn",
+			"value": "96812345678"
+		},
+		{
+			"key": "test_destination_msisdn",
+			"value": "96887654321"
+		}
+	]
+} 

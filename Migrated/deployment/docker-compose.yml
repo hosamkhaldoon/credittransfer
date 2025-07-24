@@ -1,0 +1,325 @@
+# Add buildx-specific configuration at the top
+x-buildx-config: &buildx-config
+  driver: docker-container
+  driver-opts:
+    network: host
+    image: moby/buildkit:latest
+
+# Add compose-specific variables
+x-variables: &variables
+  REGISTRY: ${REGISTRY:-}
+  TAG: ${TAG:-latest}
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0.3
+    container_name: keycloak-credittransfer-dev
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin123
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=keycloak123
+      - KC_HOSTNAME=localhost
+      - KC_HOSTNAME_PORT=9080
+      - KC_HOSTNAME_ADMIN_URL=http://localhost:9080
+      - KC_HOSTNAME_STRICT=false
+      - KC_HOSTNAME_STRICT_HTTPS=false
+      - KC_HTTP_ENABLED=true
+      - KC_HEALTH_ENABLED=true
+      - KC_METRICS_ENABLED=true
+    command: start-dev
+    ports:
+      - "9080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - keycloak-network
+
+
+  postgres:
+    image: postgres:15
+    container_name: postgres-keycloak-dev
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak123
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - keycloak-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-credittransfer-dev
+    command: redis-server --appendonly yes --requirepass "CreditTransfer2024!"
+    volumes:
+      - redis_data_dev:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - credittransfer-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  credittransfer-wcf:
+    image: ${REGISTRY:-}credittransfer-wcf:${TAG:-latest}
+    build:
+      context: ..
+      dockerfile: src/Services/WebServices/CreditTransferService/Dockerfile
+      x-bake:
+        <<: *buildx-config
+    container_name: credittransfer-wcf-dev
+    environment:
+      # Core Configuration
+      - "ASPNETCORE_ENVIRONMENT=Development"
+      - "ASPNETCORE_URLS=http://+:80"
+      
+      # External SQL Server Database Configuration
+      - "ConnectionStrings__DefaultConnection=Server=10.1.133.31;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;"
+      
+      # Redis Configuration
+      - "Redis__ConnectionString=redis:6379,password=CreditTransfer2024!"
+      - "Redis__Database=0"
+      - "Redis__KeyPrefix=CreditTransfer:"
+      - "Redis__DefaultCacheTimeoutMinutes=30"
+      
+      # Keycloak Configuration
+      - "Keycloak__Authority=http://keycloak:8080/realms/credittransfer"
+      - "Keycloak__Audience=credittransfer-api"
+      - "Keycloak__RequireHttpsMetadata=false"
+      - "Keycloak__ValidateAudience=false"
+      - "Keycloak__ValidateIssuer=true"
+      - "Keycloak__ValidateLifetime=true"
+      - "Keycloak__ClockSkew=00:05:00"
+      
+      # Logging Configuration
+      - "Logging__LogLevel__Default=Information"
+      - "Logging__LogLevel__CreditTransfer=Debug"
+      - "Logging__LogLevel__CoreWCF=Debug"
+      - "Logging__LogLevel__Microsoft.EntityFrameworkCore=Warning"
+      
+      # Health Check Configuration
+      - "HealthChecks__UI__EvaluationTimeInSeconds=10"
+      - "HealthChecks__UI__MinimumSecondsBetweenFailureNotifications=60"
+      
+      # OpenTelemetry/Jaeger Configuration
+      - "Jaeger__Endpoint=http://jaeger:4317"
+      
+    ports:
+      - "5001:80"
+    depends_on:
+      - keycloak
+      - redis
+    networks:
+      - credittransfer-network
+      - keycloak-network
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  credittransfer-api:
+    image: ${REGISTRY:-}credittransfer-api:${TAG:-latest}
+    build:
+      context: ..
+      dockerfile: src/Services/ApiServices/CreditTransferApi/Dockerfile
+      x-bake:
+        <<: *buildx-config
+    container_name: credittransfer-api-dev
+    environment:
+      # Core Configuration
+      - "ASPNETCORE_ENVIRONMENT=Development"
+      - "ASPNETCORE_URLS=http://+:80"
+      
+      # External SQL Server Database Configuration
+      - "ConnectionStrings__DefaultConnection=Server=10.1.133.31;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;"
+      
+      # Redis Configuration
+      - "Redis__ConnectionString=redis:6379,password=CreditTransfer2024!"
+      - "Redis__Database=0"
+      - "Redis__KeyPrefix=CreditTransfer:"
+      - "Redis__DefaultCacheTimeoutMinutes=30"
+      
+      # Keycloak Configuration
+      - "Keycloak__Authority=http://keycloak:8080/realms/credittransfer"
+      - "Keycloak__Audience=credittransfer-api"
+      - "Keycloak__RequireHttpsMetadata=false"
+      - "Keycloak__ValidateAudience=false"
+      - "Keycloak__ValidateIssuer=true"
+      - "Keycloak__ValidateLifetime=true"
+      - "Keycloak__ClockSkew=00:05:00"
+      
+      # Logging Configuration
+      - "Logging__LogLevel__Default=Information"
+      - "Logging__LogLevel__CreditTransfer=Debug"
+      - "Logging__LogLevel__Microsoft.EntityFrameworkCore=Information"
+      
+      # Health Check Configuration
+      - "HealthChecks__UI__EvaluationTimeInSeconds=10"
+      - "HealthChecks__UI__MinimumSecondsBetweenFailureNotifications=60"
+      
+      # OpenTelemetry/Jaeger Configuration
+      - "Jaeger__Endpoint=http://jaeger:4317"
+      
+    ports:
+      - "5002:80"
+    depends_on:
+      - keycloak
+      - redis
+    networks:
+      - credittransfer-network
+      - keycloak-network
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 30s
+      retries: 5
+      start_period: 60s
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy-dev
+    ports:
+      - "9092:8090"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - credittransfer-api
+      - credittransfer-wcf
+      - keycloak
+    networks:
+      - credittransfer-network
+      - keycloak-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: prometheus-credittransfer-dev
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data_dev:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - credittransfer-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.3.1
+    container_name: grafana-credittransfer-dev
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=CreditTransfer2024!
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SERVER_ROOT_URL=http://localhost:3000/
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - grafana_data_dev:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - redis
+    networks:
+      - credittransfer-network
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: jaeger-credittransfer-dev
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - JAEGER_DISABLED=false
+      - SPAN_STORAGE_TYPE=memory
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP receiver
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+    networks:
+      - credittransfer-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: redis-insight-dev
+    ports:
+      - "9001:8001"
+    depends_on:
+      - redis
+    networks:
+      - credittransfer-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data_dev:
+    driver: local
+  redis_data_dev:
+    driver: local
+  prometheus_data_dev:
+    driver: local
+  grafana_data_dev:
+    driver: local
+
+networks:
+  credittransfer-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+  keycloak-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/16 
+
+# Add buildx bake integration
+x-bake:
+  <<: *buildx-config
+  group:
+    default:
+      targets: ["credittransfer-api", "credittransfer-wcf"]
+  target:
+    credittransfer-api:
+      context: .
+      dockerfile: src/Services/ApiServices/CreditTransferApi/Dockerfile
+      tags: ["${REGISTRY:-}credittransfer-api:${TAG:-latest}"]
+      platforms: ["linux/amd64"]
+    credittransfer-wcf:
+      context: .
+      dockerfile: src/Services/WebServices/CreditTransferService/Dockerfile
+      tags: ["${REGISTRY:-}credittransfer-wcf:${TAG:-latest}"]
+      platforms: ["linux/amd64"] 

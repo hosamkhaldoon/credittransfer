@@ -1,0 +1,81 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: credittransfer-gateway
+  namespace: credittransfer
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: credittransfer-tls
+    hosts:
+    - "*"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: credittransfer-vs
+  namespace: credittransfer
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - credittransfer-gateway
+  http:
+  - match:
+    - uri:
+        prefix: "/api/"
+    route:
+    - destination:
+        host: credittransfer-api
+        port:
+          number: 80
+    fault:
+      delay:
+        percentage:
+          value: 0.1
+        fixedDelay: 5s
+    retries:
+      attempts: 3
+      perTryTimeout: 30s
+  - match:
+    - uri:
+        prefix: "/wcf/"
+    - uri:
+        prefix: "/CreditTransferService.svc"
+    route:
+    - destination:
+        host: credittransfer-wcf
+        port:
+          number: 80
+    retries:
+      attempts: 3
+      perTryTimeout: 30s
+  - match:
+    - uri:
+        prefix: "/auth/"
+    route:
+    - destination:
+        host: keycloak
+        port:
+          number: 8080
+  - match:
+    - uri:
+        prefix: "/"
+    route:
+    - destination:
+        host: credittransfer-api
+        port:
+          number: 80 

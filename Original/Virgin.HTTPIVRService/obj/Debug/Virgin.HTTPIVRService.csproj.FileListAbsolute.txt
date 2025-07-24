@@ -1,0 +1,14 @@
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.HTTPIVRService\bin\Virgin.HTTPIVRService.dll.config
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.HTTPIVRService\bin\Virgin.HTTPIVRService.dll
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.HTTPIVRService\bin\Virgin.HTTPIVRService.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.csprojAssemblyReference.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.csproj.CoreCompileInputs.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.dll
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.HTTPIVRService\bin\Virgin.HTTPIVRService.dll.config
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.HTTPIVRService\bin\Virgin.HTTPIVRService.dll
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.HTTPIVRService\bin\Virgin.HTTPIVRService.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.csproj.AssemblyReference.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.csproj.CoreCompileInputs.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.dll
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\Virgin.HTTPIVRService\obj\Debug\Virgin.HTTPIVRService.pdb

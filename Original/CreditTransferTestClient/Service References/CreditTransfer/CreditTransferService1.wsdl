@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions xmlns:wsam="http://www.w3.org/2007/05/addressing/metadata" xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex" xmlns:wsap="http://schemas.xmlsoap.org/ws/2004/08/addressing/policy" xmlns:msc="http://schemas.microsoft.com/ws/2005/12/wsdl/contract" xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:tns="http://tempuri.org/" xmlns:wsa10="http://www.w3.org/2005/08/addressing" xmlns:wsaw="http://www.w3.org/2006/05/addressing/wsdl" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" name="CreditTransferService" targetNamespace="http://tempuri.org/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <wsp:Policy wsu:Id="BasicHttpBinding_ICreditTransferService_policy">
+    <wsp:ExactlyOne>
+      <wsp:All>
+        <http:NegotiateAuthentication xmlns:http="http://schemas.microsoft.com/ws/06/2004/policy/http" />
+      </wsp:All>
+    </wsp:ExactlyOne>
+  </wsp:Policy>
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://tempuri.org/Imports">
+      <xsd:import schemaLocation="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?xsd=xsd0" namespace="http://tempuri.org/" />
+      <xsd:import schemaLocation="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?xsd=xsd1" namespace="http://schemas.microsoft.com/2003/10/Serialization/" />
+      <xsd:import schemaLocation="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc?xsd=xsd2" namespace="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="ICreditTransferService_TransferCredit_InputMessage">
+    <wsdl:part name="parameters" element="tns:TransferCredit" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_TransferCredit_OutputMessage">
+    <wsdl:part name="parameters" element="tns:TransferCreditResponse" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_TransferCreditWithAdjustmentReason_InputMessage">
+    <wsdl:part name="parameters" element="tns:TransferCreditWithAdjustmentReason" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_TransferCreditWithAdjustmentReason_OutputMessage">
+    <wsdl:part name="parameters" element="tns:TransferCreditWithAdjustmentReasonResponse" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_GetDenomination_InputMessage">
+    <wsdl:part name="parameters" element="tns:GetDenomination" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_GetDenomination_OutputMessage">
+    <wsdl:part name="parameters" element="tns:GetDenominationResponse" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_TransferCreditWithoutPinforSC_InputMessage">
+    <wsdl:part name="parameters" element="tns:TransferCreditWithoutPinforSC" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_TransferCreditWithoutPinforSC_OutputMessage">
+    <wsdl:part name="parameters" element="tns:TransferCreditWithoutPinforSCResponse" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_ValidateTransferInputs_InputMessage">
+    <wsdl:part name="parameters" element="tns:ValidateTransferInputs" />
+  </wsdl:message>
+  <wsdl:message name="ICreditTransferService_ValidateTransferInputs_OutputMessage">
+    <wsdl:part name="parameters" element="tns:ValidateTransferInputsResponse" />
+  </wsdl:message>
+  <wsdl:portType name="ICreditTransferService">
+    <wsdl:operation name="TransferCredit">
+      <wsdl:input wsaw:Action="http://tempuri.org/ICreditTransferService/TransferCredit" message="tns:ICreditTransferService_TransferCredit_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/ICreditTransferService/TransferCreditResponse" message="tns:ICreditTransferService_TransferCredit_OutputMessage" />
+    </wsdl:operation>
+    <wsdl:operation name="TransferCreditWithAdjustmentReason">
+      <wsdl:input wsaw:Action="http://tempuri.org/ICreditTransferService/TransferCreditWithAdjustmentReason" message="tns:ICreditTransferService_TransferCreditWithAdjustmentReason_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/ICreditTransferService/TransferCreditWithAdjustmentReasonResponse" message="tns:ICreditTransferService_TransferCreditWithAdjustmentReason_OutputMessage" />
+    </wsdl:operation>
+    <wsdl:operation name="GetDenomination">
+      <wsdl:input wsaw:Action="http://tempuri.org/ICreditTransferService/GetDenomination" message="tns:ICreditTransferService_GetDenomination_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/ICreditTransferService/GetDenominationResponse" message="tns:ICreditTransferService_GetDenomination_OutputMessage" />
+    </wsdl:operation>
+    <wsdl:operation name="TransferCreditWithoutPinforSC">
+      <wsdl:input wsaw:Action="http://tempuri.org/ICreditTransferService/TransferCreditWithoutPinforSC" message="tns:ICreditTransferService_TransferCreditWithoutPinforSC_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/ICreditTransferService/TransferCreditWithoutPinforSCResponse" message="tns:ICreditTransferService_TransferCreditWithoutPinforSC_OutputMessage" />
+    </wsdl:operation>
+    <wsdl:operation name="ValidateTransferInputs">
+      <wsdl:input wsaw:Action="http://tempuri.org/ICreditTransferService/ValidateTransferInputs" message="tns:ICreditTransferService_ValidateTransferInputs_InputMessage" />
+      <wsdl:output wsaw:Action="http://tempuri.org/ICreditTransferService/ValidateTransferInputsResponse" message="tns:ICreditTransferService_ValidateTransferInputs_OutputMessage" />
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="BasicHttpBinding_ICreditTransferService" type="tns:ICreditTransferService">
+    <wsp:PolicyReference URI="#BasicHttpBinding_ICreditTransferService_policy" />
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="TransferCredit">
+      <soap:operation soapAction="http://tempuri.org/ICreditTransferService/TransferCredit" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="TransferCreditWithAdjustmentReason">
+      <soap:operation soapAction="http://tempuri.org/ICreditTransferService/TransferCreditWithAdjustmentReason" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetDenomination">
+      <soap:operation soapAction="http://tempuri.org/ICreditTransferService/GetDenomination" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="TransferCreditWithoutPinforSC">
+      <soap:operation soapAction="http://tempuri.org/ICreditTransferService/TransferCreditWithoutPinforSC" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ValidateTransferInputs">
+      <soap:operation soapAction="http://tempuri.org/ICreditTransferService/ValidateTransferInputs" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="CreditTransferService">
+    <wsdl:port name="BasicHttpBinding_ICreditTransferService" binding="tns:BasicHttpBinding_ICreditTransferService">
+      <soap:address location="http://10.1.132.98/FRiENDi.CreditTransfer.WcfServices/CreditTransferService.svc" />
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

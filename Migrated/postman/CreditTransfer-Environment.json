@@ -1,0 +1,147 @@
+{
+	"id": "966c51bb-fb22-4540-aa35-ded5e8f324b1",
+	"name": "Credit Transfer Environment",
+	"values": [
+		{
+			"key": "keycloak_url",
+			"value": "http://localhost:9080",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "rest_api_url",
+			"value": "http://localhost:5002",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "wcf_service_url",
+			"value": "http://localhost:5001",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "nginx_proxy_url",
+			"value": "http://localhost:9092",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "operator_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "system_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "admin_username",
+			"value": "ctadmin",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "admin_password",
+			"value": "admin123",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "operator_username",
+			"value": "ctoperator",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "operator_password",
+			"value": "operator123",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "system_username",
+			"value": "ctsystem",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "system_password",
+			"value": "system123",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "client_id",
+			"value": "credittransfer-api",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "realm",
+			"value": "credittransfer",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_source_msisdn",
+			"value": "96876325315",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_destination_msisdn",
+			"value": "96878715705",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_balanced_msisdn",
+			"value": "96898455550",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_transfer_amount_riyal",
+			"value": "5",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_transfer_amount_baisa",
+			"value": "0",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_pin",
+			"value": "1234",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "test_adjustment_reason",
+			"value": "Customer Service Adjustment",
+			"type": "default",
+			"enabled": true
+		}
+	],
+	"_postman_variable_scope": "environment",
+	"_postman_exported_at": "2025-07-08T06:48:53.245Z",
+	"_postman_exported_using": "Postman/11.52.6"
+}

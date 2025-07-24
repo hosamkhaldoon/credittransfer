@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ReferenceGroup xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ID="f70f8507-ddd0-4f1e-b132-8691a6fd85fa" xmlns="urn:schemas-microsoft-com:xml-wcfservicemap">
+  <ClientOptions>
+    <GenerateAsynchronousMethods>false</GenerateAsynchronousMethods>
+    <EnableDataBinding>true</EnableDataBinding>
+    <ExcludedTypes />
+    <ImportXmlTypes>false</ImportXmlTypes>
+    <GenerateInternalTypes>false</GenerateInternalTypes>
+    <GenerateMessageContracts>false</GenerateMessageContracts>
+    <NamespaceMappings />
+    <CollectionMappings />
+    <GenerateSerializableTypes>true</GenerateSerializableTypes>
+    <Serializer>Auto</Serializer>
+    <UseSerializerForFaults>true</UseSerializerForFaults>
+    <ReferenceAllAssemblies>true</ReferenceAllAssemblies>
+    <ReferencedAssemblies />
+    <ReferencedDataContractTypes />
+    <ServiceContractMappings />
+  </ClientOptions>
+  <MetadataSources>
+    <MetadataSource Address="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc" Protocol="http" SourceId="1" />
+  </MetadataSources>
+  <Metadata>
+    <MetadataFile FileName="ProductSellingService1.wsdl" MetadataType="Wsdl" ID="4655ffe4-24dc-4405-b5ed-cac587fdc992" SourceId="1" SourceUrl="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?wsdl" />
+    <MetadataFile FileName="ProductSellingService4.xsd" MetadataType="Schema" ID="6c51f7e8-6a25-492f-984f-7e5d6ac5fe11" SourceId="1" SourceUrl="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd0" />
+    <MetadataFile FileName="ProductSellingService41.xsd" MetadataType="Schema" ID="341a73a3-4fe6-42a3-bb5e-21836f322cfc" SourceId="1" SourceUrl="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd1" />
+    <MetadataFile FileName="ProductSellingService42.xsd" MetadataType="Schema" ID="4bc0e632-d7f2-46c8-addf-a08b2f67e2d3" SourceId="1" SourceUrl="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd2" />
+    <MetadataFile FileName="ProductSellingService43.xsd" MetadataType="Schema" ID="eceb7093-1043-4fd6-8b7b-c0d4dd74405d" SourceId="1" SourceUrl="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?xsd=xsd3" />
+    <MetadataFile FileName="ProductSellingService1.disco" MetadataType="Disco" ID="b741141f-d78a-4df5-8e19-86d3ba29bec2" SourceId="1" SourceUrl="http://10.1.132.50/UAT.OneCode.Activation.Extended/ProductSellingService.svc?disco" />
+  </Metadata>
+  <Extensions>
+    <ExtensionFile FileName="configuration91.svcinfo" Name="configuration91.svcinfo" />
+    <ExtensionFile FileName="configuration.svcinfo" Name="configuration.svcinfo" />
+  </Extensions>
+</ReferenceGroup>

@@ -1,0 +1,53 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Credit Transfer REST API Service
+  - job_name: 'credittransfer-api'
+    static_configs:
+      - targets: ['credittransfer-api-prod:80']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 5s
+
+  # Credit Transfer WCF Service  
+  - job_name: 'credittransfer-wcf'
+    static_configs:
+      - targets: ['credittransfer-wcf-prod:80']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 5s
+
+  # Keycloak metrics (if enabled)
+  - job_name: 'keycloak'
+    static_configs:
+      - targets: ['keycloak-credittransfer-prod:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # SQL Server metrics (using sql_exporter if added later)
+  # - job_name: 'sqlserver'
+  #   static_configs:
+  #     - targets: ['sqlserver-exporter:9399']
+  #   scrape_interval: 30s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+# rule_files:
+#   - "credit_transfer_rules.yml" 

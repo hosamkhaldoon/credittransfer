@@ -1,0 +1,42 @@
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.exe.config
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.exe.manifest
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.application
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.exe
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferEngine.dll
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferWindowsService.exe
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferEngine.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferEngine.dll.config
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferWindowsService.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferWindowsService.exe.config
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.frmTest.resources
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.Properties.Resources.resources
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.GenerateResource.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.CoreCompileInputs.cache
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.exe.manifest
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.application
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.CopyComplete
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.exe
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.pdb
+E:\LP\FO\BackendServices\Credit Transfer\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.AssemblyReference.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.exe.config
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.exe.manifest
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.application
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.exe
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferTestClient.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferEngine.dll
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferWindowsService.exe
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferEngine.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferEngine.dll.config
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferWindowsService.pdb
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\bin\Debug\CreditTransferWindowsService.exe.config
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.AssemblyReference.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.frmTest.resources
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.Properties.Resources.resources
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.GenerateResource.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.CoreCompileInputs.cache
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.exe.manifest
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.application
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.csproj.CopyComplete
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.exe
+D:\LP\Bitbucket projects\Credit Transfer Oman\CreditTransfer\CreditTransferTestClient\obj\x86\Debug\CreditTransferTestClient.pdb
