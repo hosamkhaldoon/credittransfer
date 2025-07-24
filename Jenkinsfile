@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'mcr.microsoft.com/dotnet/sdk:8.0'
+            args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
     
     environment {
         // Project Configuration
@@ -36,6 +41,9 @@ pipeline {
         // Notification
         SLACK_CHANNEL = '#ci-cd-notifications'
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
+        
+        // Docker setup
+        DOCKER_CONFIG = credentials('docker-config')
     }
     
     options {
@@ -57,27 +65,18 @@ pipeline {
                 script {
                     echo "🛠️ Setting up build environment"
                     
-                    // Install required packages on Linux
-                    if (isUnix()) {
-                        sh '''
-                            # Install ICU libraries
-                            apt-get update || true
-                            apt-get install -y --no-install-recommends \\
-                                libicu-dev \\
-                                docker.io \\
-                                || true
-                            
-                            # Install .NET SDK
-                            wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb || true
-                            dpkg -i packages-microsoft-prod.deb || true
-                            apt-get update || true
-                            apt-get install -y dotnet-sdk-8.0 || true
-                            
-                            # Verify installations
-                            dotnet --version || echo "Failed to install .NET SDK"
-                            docker --version || echo "Failed to install Docker"
-                        '''
-                    }
+                    // Install Docker if needed
+                    sh '''
+                        if ! command -v docker &> /dev/null; then
+                            curl -fsSL https://get.docker.com -o get-docker.sh
+                            sh get-docker.sh
+                            rm get-docker.sh
+                        fi
+                        
+                        # Verify installations
+                        dotnet --version || echo "dotnet not available"
+                        docker --version || echo "docker not available"
+                    '''
                     
                     // Set platform-specific commands
                     env.MKDIR_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "mkdir -p"; else echo "mkdir"; fi', returnStdout: true).trim()
@@ -101,23 +100,13 @@ pipeline {
                     checkout scm
                     
                     // Setup .NET tools
-                    if (isUnix()) {
-                        sh '''
-                            dotnet --version || echo "dotnet not available"
-                            dotnet tool restore || echo "tool restore failed"
-                            dotnet tool list --global || echo "tool list failed"
-                            docker --version || echo "docker not available"
-                            git --version || echo "git not available"
-                        '''
-                    } else {
-                        bat '''
-                            dotnet --version
-                            dotnet tool restore
-                            dotnet tool list --global
-                            docker --version
-                            git --version
-                        '''
-                    }
+                    sh '''
+                        dotnet --version || echo "dotnet not available"
+                        dotnet tool restore || echo "tool restore failed"
+                        dotnet tool list --global || echo "tool list failed"
+                        docker --version || echo "docker not available"
+                        git --version || echo "git not available"
+                    '''
                 }
             }
             post {
@@ -819,21 +808,14 @@ pipeline {
                 echo "🧹 Performing cleanup tasks"
                 
                 // Clean up Docker images if Docker is available
-                if (isUnix()) {
-                    sh '''
-                        if command -v docker &> /dev/null; then
-                            docker image prune -f || echo "Docker cleanup failed"
-                            docker system df || echo "Docker system info failed"
-                        else
-                            echo "Docker not available"
-                        fi
-                    '''
-                } else {
-                    bat '''
+                sh '''
+                    if command -v docker &> /dev/null; then
                         docker image prune -f || echo "Docker cleanup failed"
                         docker system df || echo "Docker system info failed"
-                    '''
-                }
+                    else
+                        echo "Docker not available"
+                    fi
+                '''
                 
                 // Archive important logs
                 archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
@@ -845,15 +827,9 @@ pipeline {
                 sendNotification('SUCCESS', 'Pipeline completed successfully')
                 
                 // Update deployment status
-                if (isUnix()) {
-                    sh '''
-                        echo "Pipeline completed successfully at $(date)" > deployment-status.txt
-                    '''
-                } else {
-                    bat '''
-                        echo Pipeline completed successfully at %date% %time% > deployment-status.txt
-                    '''
-                }
+                sh '''
+                    echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                '''
                 archiveArtifacts artifacts: 'deployment-status.txt'
             }
         }
@@ -863,23 +839,15 @@ pipeline {
                 sendNotification('FAILED', 'Pipeline failed')
                 
                 // Collect failure information
-                if (isUnix()) {
-                    sh '''
-                        echo "Pipeline failed at $(date)" > failure-status.txt
-                        if command -v docker &> /dev/null; then
-                            docker ps -a >> failure-status.txt
-                            docker images >> failure-status.txt
-                        else
-                            echo "Docker not available" >> failure-status.txt
-                        fi
-                    '''
-                } else {
-                    bat '''
-                        echo Pipeline failed at %date% %time% > failure-status.txt
+                sh '''
+                    echo "Pipeline failed at $(date)" > failure-status.txt
+                    if command -v docker &> /dev/null; then
                         docker ps -a >> failure-status.txt
                         docker images >> failure-status.txt
-                    '''
-                }
+                    else
+                        echo "Docker not available" >> failure-status.txt
+                    fi
+                '''
                 archiveArtifacts artifacts: 'failure-status.txt'
             }
         }
@@ -928,20 +896,13 @@ def sendNotification(String buildStatus, String message) {
     
     // Slack notification (optional, only if plugin is available)
     try {
-        def slackExists = false
-        Jenkins.instance.getExtensionList(jenkins.plugins.slack.SlackNotifier.DescriptorImpl.class).each { descriptor ->
-            slackExists = true
-        }
-        
-        if (slackExists && env.SLACK_CHANNEL) {
+        if (env.SLACK_CHANNEL) {
             slackSend(
                 channel: env.SLACK_CHANNEL,
                 color: colorCode,
                 message: summary,
                 failOnError: false
             )
-        } else {
-            echo "Slack notification skipped - plugin not available or channel not configured"
         }
     } catch (Exception e) {
         echo "Slack notification failed: ${e.getMessage()}"
