@@ -57,6 +57,15 @@ pipeline {
                         mkdir -p ${SECURITY_SCAN_DIR}
                     '''
                     
+                    // Install ICU package first
+                    sh '''#!/bin/bash
+                        echo "Installing ICU package..."
+                        if ! dpkg -l | grep -q libicu; then
+                            sudo apt-get update
+                            sudo apt-get install -y libicu-dev
+                        fi
+                    '''
+                    
                     // Install .NET SDK
                     sh '''#!/bin/bash
                         # Download and install .NET SDK
@@ -84,7 +93,10 @@ pipeline {
                         # Verify .NET installation
                         if [ -f ${DOTNET_ROOT}/dotnet ]; then
                             echo ".NET SDK installed successfully"
-                            ${DOTNET_ROOT}/dotnet --info
+                            ${DOTNET_ROOT}/dotnet --info || {
+                                echo "Failed to run dotnet --info. Error code: $?"
+                                exit 1
+                            }
                         else
                             echo ".NET SDK installation failed"
                             exit 1
