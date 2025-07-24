@@ -260,35 +260,48 @@ pipeline {
                 script {
                     echo "🧪 Running Tests"
                     sh '''#!/bin/bash
+                        # Export environment variables
+                        export PATH="${DOTNET_ROOT}:${PATH}"
+                        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+                        
                         cd Migrated
                         
+                        # Build tests first
+                        echo "Building tests..."
+                        ${DOTNET_ROOT}/dotnet build ${SOLUTION_FILE} \
+                            --configuration Release \
+                            --no-restore \
+                            --verbosity normal \
+                            /p:Version=${VERSION}
+                        
                         # Run unit tests
+                        echo "Running unit tests..."
                         mkdir -p ${TEST_RESULTS_DIR}/unit
                         ${DOTNET_ROOT}/dotnet test ${SOLUTION_FILE} \
                             --configuration Release \
                             --no-build \
                             --filter "Category=Unit" \
+                            --logger "trx;LogFileName=unit_tests.trx" \
                             --results-directory ${TEST_RESULTS_DIR}/unit \
-                            --logger trx \
                             --verbosity normal \
                             --collect:"XPlat Code Coverage"
                         
                         # Run integration tests
+                        echo "Running integration tests..."
                         mkdir -p ${TEST_RESULTS_DIR}/integration
                         ${DOTNET_ROOT}/dotnet test tests/Integration/CreditTransfer.Integration.Tests/CreditTransfer.Integration.Tests.csproj \
                             --configuration Release \
                             --no-build \
                             --filter "Category=Integration" \
+                            --logger "trx;LogFileName=integration_tests.trx" \
                             --results-directory ${TEST_RESULTS_DIR}/integration \
-                            --logger trx \
                             --verbosity normal
                     '''
                 }
             }
             post {
                 always {
-                    publishTestResults testResultsPattern: '**/Migrated/**/unit/*.trx'
-                    publishTestResults testResultsPattern: '**/Migrated/**/integration/*.trx'
+                    junit allowEmptyResults: true, testResults: '**/Migrated/**/test-results/**/*.trx'
                 }
             }
         }
