@@ -35,7 +35,7 @@ pipeline {
         
         // Notification
         SLACK_CHANNEL = '#ci-cd-notifications'
-        EMAIL_RECIPIENTS = 'dev-team@company.com'
+        EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
     }
     
     options {
@@ -52,6 +52,41 @@ pipeline {
     }
     
     stages {
+        stage('🛠️ Setup Environment') {
+            steps {
+                script {
+                    echo "🛠️ Setting up build environment"
+                    
+                    // Install required packages on Linux
+                    if (isUnix()) {
+                        sh '''
+                            # Install ICU libraries
+                            apt-get update || true
+                            apt-get install -y --no-install-recommends \\
+                                libicu-dev \\
+                                docker.io \\
+                                || true
+                            
+                            # Install .NET SDK
+                            wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb || true
+                            dpkg -i packages-microsoft-prod.deb || true
+                            apt-get update || true
+                            apt-get install -y dotnet-sdk-8.0 || true
+                            
+                            # Verify installations
+                            dotnet --version || echo "Failed to install .NET SDK"
+                            docker --version || echo "Failed to install Docker"
+                        '''
+                    }
+                    
+                    // Set platform-specific commands
+                    env.MKDIR_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "mkdir -p"; else echo "mkdir"; fi', returnStdout: true).trim()
+                    env.CD_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "cd"; else echo "cd"; fi', returnStdout: true).trim()
+                    env.PATH_SEPARATOR = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "/"; else echo "\\\\"; fi', returnStdout: true).trim()
+                }
+            }
+        }
+        
         stage('🚀 Pipeline Initialization') {
             steps {
                 script {
@@ -62,22 +97,17 @@ pipeline {
                     echo "🖥️  Agent: ${env.NODE_NAME}"
                     echo "🌿 Branch: ${env.BRANCH_NAME}"
                     
-                    // Set platform-specific commands
-                    env.MKDIR_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "mkdir -p"; else echo "mkdir"; fi', returnStdout: true).trim()
-                    env.CD_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "cd"; else echo "cd"; fi', returnStdout: true).trim()
-                    env.PATH_SEPARATOR = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "/"; else echo "\\\\"; fi', returnStdout: true).trim()
-                    
                     // Checkout code
                     checkout scm
                     
                     // Setup .NET tools
                     if (isUnix()) {
                         sh '''
-                            dotnet --version
-                            dotnet tool restore
-                            dotnet tool list --global
-                            docker --version
-                            git --version
+                            dotnet --version || echo "dotnet not available"
+                            dotnet tool restore || echo "tool restore failed"
+                            dotnet tool list --global || echo "tool list failed"
+                            docker --version || echo "docker not available"
+                            git --version || echo "git not available"
                         '''
                     } else {
                         bat '''
@@ -788,16 +818,20 @@ pipeline {
             script {
                 echo "🧹 Performing cleanup tasks"
                 
-                // Clean up Docker images
+                // Clean up Docker images if Docker is available
                 if (isUnix()) {
                     sh '''
-                        docker image prune -f || echo "No images to prune"
-                        docker system df
+                        if command -v docker &> /dev/null; then
+                            docker image prune -f || echo "Docker cleanup failed"
+                            docker system df || echo "Docker system info failed"
+                        else
+                            echo "Docker not available"
+                        fi
                     '''
                 } else {
                     bat '''
-                        docker image prune -f || echo "No images to prune"
-                        docker system df
+                        docker image prune -f || echo "Docker cleanup failed"
+                        docker system df || echo "Docker system info failed"
                     '''
                 }
                 
@@ -832,8 +866,12 @@ pipeline {
                 if (isUnix()) {
                     sh '''
                         echo "Pipeline failed at $(date)" > failure-status.txt
-                        docker ps -a >> failure-status.txt
-                        docker images >> failure-status.txt
+                        if command -v docker &> /dev/null; then
+                            docker ps -a >> failure-status.txt
+                            docker images >> failure-status.txt
+                        else
+                            echo "Docker not available" >> failure-status.txt
+                        fi
                     '''
                 } else {
                     bat '''
@@ -876,26 +914,7 @@ def sendNotification(String buildStatus, String message) {
         *Build URL*: ${env.BUILD_URL}
     """
     
-    // Slack notification (only if plugin is available)
-    try {
-        if (env.SLACK_CHANNEL) {
-            def slackResponse = slackSend(
-                channel: env.SLACK_CHANNEL,
-                color: colorCode,
-                message: summary,
-                teamDomain: 'your-team',
-                token: 'slack-token',
-                failOnError: false
-            )
-            if (!slackResponse) {
-                echo "Slack notification skipped - plugin not available"
-            }
-        }
-    } catch (Exception e) {
-        echo "Slack notification failed: ${e.getMessage()}"
-    }
-    
-    // Email notification
+    // Email notification (primary notification method)
     try {
         emailext(
             subject: subject,
@@ -905,5 +924,26 @@ def sendNotification(String buildStatus, String message) {
         )
     } catch (Exception e) {
         echo "Email notification failed: ${e.getMessage()}"
+    }
+    
+    // Slack notification (optional, only if plugin is available)
+    try {
+        def slackExists = false
+        Jenkins.instance.getExtensionList(jenkins.plugins.slack.SlackNotifier.DescriptorImpl.class).each { descriptor ->
+            slackExists = true
+        }
+        
+        if (slackExists && env.SLACK_CHANNEL) {
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: colorCode,
+                message: summary,
+                failOnError: false
+            )
+        } else {
+            echo "Slack notification skipped - plugin not available or channel not configured"
+        }
+    } catch (Exception e) {
+        echo "Slack notification failed: ${e.getMessage()}"
     }
 } 
