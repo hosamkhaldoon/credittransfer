@@ -11,7 +11,7 @@ pipeline {
         
         // Version Management
         BUILD_NUMBER = "${env.BUILD_NUMBER}"
-        GIT_COMMIT_SHORT = bat(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+        GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
         VERSION = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
         
         // Docker Images
@@ -36,26 +36,23 @@ pipeline {
         // Notification
         SLACK_CHANNEL = '#ci-cd-notifications'
         EMAIL_RECIPIENTS = 'dev-team@company.com'
+        
+        // Cross-platform commands
+        MKDIR_CMD = isUnix() ? 'mkdir -p' : 'mkdir'
+        CD_CMD = isUnix() ? 'cd' : 'cd'
+        PATH_SEPARATOR = isUnix() ? '/' : '\\'
     }
     
     options {
-        // Pipeline Options
         timeout(time: 3, unit: 'HOURS')
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
-        
-        // Timestamps
         timestamps()
-        
-        // AnsiColor for better output
         ansiColor('xterm')
-        
-        // Keep build logs
         preserveStashes(buildCount: 5)
     }
     
     tools {
-        // Tool Configuration for Windows
         dotnetsdk 'DotNet-8.0'
     }
     
@@ -69,23 +66,36 @@ pipeline {
                     echo "🏷️  Version: ${VERSION}"
                     echo "🖥️  Agent: ${env.NODE_NAME}"
                     echo "🌿 Branch: ${env.BRANCH_NAME}"
+                    
+                    // Checkout code
+                    checkout scm
+                    
+                    // Setup .NET tools
+                    if (isUnix()) {
+                        sh '''
+                            dotnet --version
+                            dotnet tool restore
+                            dotnet tool list --global
+                            docker --version
+                            git --version
+                        '''
+                    } else {
+                        bat '''
+                            dotnet --version
+                            dotnet tool restore
+                            dotnet tool list --global
+                            docker --version
+                            git --version
+                        '''
+                    }
                 }
-                
-                // Checkout code
-                checkout scm
-                
-                // Setup .NET tools
-                bat '''
-                    dotnet --version
-                    dotnet tool restore
-                    dotnet tool list --global
-                    docker --version
-                    git --version
-                '''
             }
             post {
                 failure {
-                    notifyBuild('FAILED', 'Pipeline initialization failed')
+                    script {
+                        currentBuild.result = 'FAILED'
+                        sendNotification('FAILED', 'Pipeline initialization failed')
+                    }
                 }
             }
         }
@@ -95,16 +105,26 @@ pipeline {
                 script {
                     echo "📦 Restoring NuGet packages"
                     
-                    bat '''
-                        cd Migrated
-                        dotnet clean %SOLUTION_FILE%
-                        dotnet restore %SOLUTION_FILE% --verbosity normal
-                    '''
+                    if (isUnix()) {
+                        sh '''
+                            cd Migrated
+                            dotnet clean $SOLUTION_FILE
+                            dotnet restore $SOLUTION_FILE --verbosity normal
+                        '''
+                    } else {
+                        bat '''
+                            cd Migrated
+                            dotnet clean %SOLUTION_FILE%
+                            dotnet restore %SOLUTION_FILE% --verbosity normal
+                        '''
+                    }
                 }
             }
             post {
                 failure {
-                    notifyBuild('FAILED', 'Dependencies restore failed')
+                    script {
+                        sendNotification('FAILED', 'Dependencies restore failed')
+                    }
                 }
             }
         }
@@ -125,30 +145,57 @@ pipeline {
                             echo "🔍 Running SonarQube Analysis"
                             
                             withSonarQubeEnv('sonarserver') {
-                                bat '''
-                                    cd Migrated
-                                    dotnet sonarscanner begin ^
-                                        /k:"CreditTransfer-Modern" ^
-                                        /n:"Credit Transfer Modern" ^
-                                        /v:"%VERSION%" ^
-                                        /d:sonar.host.url="%SONAR_HOST_URL%" ^
-                                        /d:sonar.login="%SONAR_TOKEN%" ^
-                                        /d:sonar.cs.opencover.reportsPaths="coverage\\coverage.opencover.xml" ^
-                                        /d:sonar.coverage.exclusions="**/*Test.cs,**/*Tests.cs,**/Program.cs,**/Startup.cs" ^
-                                        /d:sonar.exclusions="**/bin/**,**/obj/**"
-                                    
-                                    dotnet build CreditTransfer.Modern.sln --configuration Release --no-restore
-                                    
-                                    dotnet test CreditTransfer.Modern.sln ^
-                                        --configuration Release ^
-                                        --no-build ^
-                                        --collect:"XPlat Code Coverage" ^
-                                        --results-directory %COVERAGE_DIR% ^
-                                        --logger trx ^
-                                        --verbosity normal
-                                    
-                                    dotnet sonarscanner end /d:sonar.login="%SONAR_TOKEN%"
-                                '''
+                                if (isUnix()) {
+                                    sh '''
+                                        cd Migrated
+                                        dotnet sonarscanner begin \
+                                            /k:"CreditTransfer-Modern" \
+                                            /n:"Credit Transfer Modern" \
+                                            /v:"$VERSION" \
+                                            /d:sonar.host.url="$SONAR_HOST_URL" \
+                                            /d:sonar.login="$SONAR_TOKEN" \
+                                            /d:sonar.cs.opencover.reportsPaths="coverage/coverage.opencover.xml" \
+                                            /d:sonar.coverage.exclusions="**/*Test.cs,**/*Tests.cs,**/Program.cs,**/Startup.cs" \
+                                            /d:sonar.exclusions="**/bin/**,**/obj/**"
+                                        
+                                        dotnet build CreditTransfer.Modern.sln --configuration Release --no-restore
+                                        
+                                        dotnet test CreditTransfer.Modern.sln \
+                                            --configuration Release \
+                                            --no-build \
+                                            --collect:"XPlat Code Coverage" \
+                                            --results-directory $COVERAGE_DIR \
+                                            --logger trx \
+                                            --verbosity normal
+                                        
+                                        dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
+                                    '''
+                                } else {
+                                    bat '''
+                                        cd Migrated
+                                        dotnet sonarscanner begin ^
+                                            /k:"CreditTransfer-Modern" ^
+                                            /n:"Credit Transfer Modern" ^
+                                            /v:"%VERSION%" ^
+                                            /d:sonar.host.url="%SONAR_HOST_URL%" ^
+                                            /d:sonar.login="%SONAR_TOKEN%" ^
+                                            /d:sonar.cs.opencover.reportsPaths="coverage\\coverage.opencover.xml" ^
+                                            /d:sonar.coverage.exclusions="**/*Test.cs,**/*Tests.cs,**/Program.cs,**/Startup.cs" ^
+                                            /d:sonar.exclusions="**/bin/**,**/obj/**"
+                                        
+                                        dotnet build CreditTransfer.Modern.sln --configuration Release --no-restore
+                                        
+                                        dotnet test CreditTransfer.Modern.sln ^
+                                            --configuration Release ^
+                                            --no-build ^
+                                            --collect:"XPlat Code Coverage" ^
+                                            --results-directory %COVERAGE_DIR% ^
+                                            --logger trx ^
+                                            --verbosity normal
+                                        
+                                        dotnet sonarscanner end /d:sonar.login="%SONAR_TOKEN%"
+                                    '''
+                                }
                             }
                         }
                     }
@@ -159,7 +206,9 @@ pipeline {
                                            sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
                         }
                         failure {
-                            notifyBuild('FAILED', 'SonarQube analysis failed')
+                            script {
+                                sendNotification('FAILED', 'SonarQube analysis failed')
+                            }
                         }
                     }
                 }
@@ -169,14 +218,25 @@ pipeline {
                         script {
                             echo "🔒 Running Static Application Security Testing"
                             
-                            bat '''
-                                cd Migrated
-                                if not exist "%SECURITY_SCAN_DIR%" mkdir "%SECURITY_SCAN_DIR%"
-                                
-                                dotnet tool install --global security-scan --version 5.6.7 || echo "Tool already installed"
-                                
-                                security-scan "CreditTransfer.Modern.sln" --export="%SECURITY_SCAN_DIR%\\security-report.json"
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    cd Migrated
+                                    mkdir -p "$SECURITY_SCAN_DIR"
+                                    
+                                    dotnet tool install --global security-scan --version 5.6.7 || echo "Tool already installed"
+                                    
+                                    security-scan "CreditTransfer.Modern.sln" --export="$SECURITY_SCAN_DIR/security-report.json"
+                                '''
+                            } else {
+                                bat '''
+                                    cd Migrated
+                                    if not exist "%SECURITY_SCAN_DIR%" mkdir "%SECURITY_SCAN_DIR%"
+                                    
+                                    dotnet tool install --global security-scan --version 5.6.7 || echo "Tool already installed"
+                                    
+                                    security-scan "CreditTransfer.Modern.sln" --export="%SECURITY_SCAN_DIR%\\security-report.json"
+                                '''
+                            }
                         }
                     }
                     post {
@@ -191,11 +251,19 @@ pipeline {
                         script {
                             echo "📋 Checking for vulnerable dependencies"
                             
-                            bat '''
-                                cd Migrated
-                                dotnet list CreditTransfer.Modern.sln package --vulnerable --include-transitive > "%SECURITY_SCAN_DIR%\\vulnerable-packages.txt" || echo "No vulnerabilities found"
-                                dotnet list CreditTransfer.Modern.sln package --outdated > "%SECURITY_SCAN_DIR%\\outdated-packages.txt" || echo "All packages up to date"
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    cd Migrated
+                                    dotnet list CreditTransfer.Modern.sln package --vulnerable --include-transitive > "$SECURITY_SCAN_DIR/vulnerable-packages.txt" || echo "No vulnerabilities found"
+                                    dotnet list CreditTransfer.Modern.sln package --outdated > "$SECURITY_SCAN_DIR/outdated-packages.txt" || echo "All packages up to date"
+                                '''
+                            } else {
+                                bat '''
+                                    cd Migrated
+                                    dotnet list CreditTransfer.Modern.sln package --vulnerable --include-transitive > "%SECURITY_SCAN_DIR%\\vulnerable-packages.txt" || echo "No vulnerabilities found"
+                                    dotnet list CreditTransfer.Modern.sln package --outdated > "%SECURITY_SCAN_DIR%\\outdated-packages.txt" || echo "All packages up to date"
+                                '''
+                            }
                         }
                     }
                 }
@@ -209,37 +277,68 @@ pipeline {
                         script {
                             echo "🔨 Building .NET Solution"
                             
-                            bat '''
-                                cd Migrated
-                                dotnet build CreditTransfer.Modern.sln ^
-                                    --configuration Release ^
-                                    --no-restore ^
-                                    --verbosity normal ^
-                                    /p:Version=%VERSION%
-                                
-                                if not exist "publish" mkdir "publish"
-                                if not exist "publish\\wcf" mkdir "publish\\wcf"
-                                if not exist "publish\\api" mkdir "publish\\api"
-                                if not exist "publish\\worker" mkdir "publish\\worker"
-                                
-                                dotnet publish src\\Services\\WebServices\\CreditTransferService\\CreditTransfer.Services.WcfService.csproj ^
-                                    --configuration Release ^
-                                    --output .\\publish\\wcf ^
-                                    --no-build ^
-                                    /p:Version=%VERSION%
-                                
-                                dotnet publish src\\Services\\ApiServices\\CreditTransferApi\\CreditTransfer.Services.RestApi.csproj ^
-                                    --configuration Release ^
-                                    --output .\\publish\\api ^
-                                    --no-build ^
-                                    /p:Version=%VERSION%
-                                
-                                dotnet publish src\\Services\\WorkerServices\\CreditTransferWorker\\CreditTransfer.Services.WorkerService.csproj ^
-                                    --configuration Release ^
-                                    --output .\\publish\\worker ^
-                                    --no-build ^
-                                    /p:Version=%VERSION%
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    cd Migrated
+                                    dotnet build CreditTransfer.Modern.sln \
+                                        --configuration Release \
+                                        --no-restore \
+                                        --verbosity normal \
+                                        /p:Version=$VERSION
+                                    
+                                    mkdir -p publish/wcf publish/api publish/worker
+                                    
+                                    dotnet publish src/Services/WebServices/CreditTransferService/CreditTransfer.Services.WcfService.csproj \
+                                        --configuration Release \
+                                        --output ./publish/wcf \
+                                        --no-build \
+                                        /p:Version=$VERSION
+                                    
+                                    dotnet publish src/Services/ApiServices/CreditTransferApi/CreditTransfer.Services.RestApi.csproj \
+                                        --configuration Release \
+                                        --output ./publish/api \
+                                        --no-build \
+                                        /p:Version=$VERSION
+                                    
+                                    dotnet publish src/Services/WorkerServices/CreditTransferWorker/CreditTransfer.Services.WorkerService.csproj \
+                                        --configuration Release \
+                                        --output ./publish/worker \
+                                        --no-build \
+                                        /p:Version=$VERSION
+                                '''
+                            } else {
+                                bat '''
+                                    cd Migrated
+                                    dotnet build CreditTransfer.Modern.sln ^
+                                        --configuration Release ^
+                                        --no-restore ^
+                                        --verbosity normal ^
+                                        /p:Version=%VERSION%
+                                    
+                                    if not exist "publish" mkdir "publish"
+                                    if not exist "publish\\wcf" mkdir "publish\\wcf"
+                                    if not exist "publish\\api" mkdir "publish\\api"
+                                    if not exist "publish\\worker" mkdir "publish\\worker"
+                                    
+                                    dotnet publish src\\Services\\WebServices\\CreditTransferService\\CreditTransfer.Services.WcfService.csproj ^
+                                        --configuration Release ^
+                                        --output .\\publish\\wcf ^
+                                        --no-build ^
+                                        /p:Version=%VERSION%
+                                    
+                                    dotnet publish src\\Services\\ApiServices\\CreditTransferApi\\CreditTransfer.Services.RestApi.csproj ^
+                                        --configuration Release ^
+                                        --output .\\publish\\api ^
+                                        --no-build ^
+                                        /p:Version=%VERSION%
+                                    
+                                    dotnet publish src\\Services\\WorkerServices\\CreditTransferWorker\\CreditTransfer.Services.WorkerService.csproj ^
+                                        --configuration Release ^
+                                        --output .\\publish\\worker ^
+                                        --no-build ^
+                                        /p:Version=%VERSION%
+                                '''
+                            }
                         }
                     }
                     post {
@@ -247,7 +346,9 @@ pipeline {
                             archiveArtifacts artifacts: 'Migrated/publish/**/*', fingerprint: true
                         }
                         failure {
-                            notifyBuild('FAILED', 'Build failed')
+                            script {
+                                sendNotification('FAILED', 'Build failed')
+                            }
                         }
                     }
                 }
@@ -257,19 +358,35 @@ pipeline {
                         script {
                             echo "🧪 Running Unit Tests"
                             
-                            bat '''
-                                cd Migrated
-                                if not exist "%TEST_RESULTS_DIR%\\unit" mkdir "%TEST_RESULTS_DIR%\\unit"
-                                
-                                dotnet test CreditTransfer.Modern.sln ^
-                                    --configuration Release ^
-                                    --no-build ^
-                                    --filter "Category=Unit" ^
-                                    --results-directory %TEST_RESULTS_DIR%\\unit ^
-                                    --logger trx ^
-                                    --verbosity normal ^
-                                    --collect:"XPlat Code Coverage"
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    cd Migrated
+                                    mkdir -p "$TEST_RESULTS_DIR/unit"
+                                    
+                                    dotnet test CreditTransfer.Modern.sln \
+                                        --configuration Release \
+                                        --no-build \
+                                        --filter "Category=Unit" \
+                                        --results-directory $TEST_RESULTS_DIR/unit \
+                                        --logger trx \
+                                        --verbosity normal \
+                                        --collect:"XPlat Code Coverage"
+                                '''
+                            } else {
+                                bat '''
+                                    cd Migrated
+                                    if not exist "%TEST_RESULTS_DIR%\\unit" mkdir "%TEST_RESULTS_DIR%\\unit"
+                                    
+                                    dotnet test CreditTransfer.Modern.sln ^
+                                        --configuration Release ^
+                                        --no-build ^
+                                        --filter "Category=Unit" ^
+                                        --results-directory %TEST_RESULTS_DIR%\\unit ^
+                                        --logger trx ^
+                                        --verbosity normal ^
+                                        --collect:"XPlat Code Coverage"
+                                '''
+                            }
                         }
                     }
                     post {
@@ -284,18 +401,33 @@ pipeline {
                         script {
                             echo "🔗 Running Integration Tests"
                             
-                            bat '''
-                                cd Migrated
-                                if not exist "%TEST_RESULTS_DIR%\\integration" mkdir "%TEST_RESULTS_DIR%\\integration"
-                                
-                                dotnet test tests\\Integration\\CreditTransfer.Integration.Tests\\CreditTransfer.Integration.Tests.csproj ^
-                                    --configuration Release ^
-                                    --no-build ^
-                                    --filter "Category=Integration" ^
-                                    --results-directory %TEST_RESULTS_DIR%\\integration ^
-                                    --logger trx ^
-                                    --verbosity normal
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    cd Migrated
+                                    mkdir -p "$TEST_RESULTS_DIR/integration"
+                                    
+                                    dotnet test tests/Integration/CreditTransfer.Integration.Tests/CreditTransfer.Integration.Tests.csproj \
+                                        --configuration Release \
+                                        --no-build \
+                                        --filter "Category=Integration" \
+                                        --results-directory $TEST_RESULTS_DIR/integration \
+                                        --logger trx \
+                                        --verbosity normal
+                                '''
+                            } else {
+                                bat '''
+                                    cd Migrated
+                                    if not exist "%TEST_RESULTS_DIR%\\integration" mkdir "%TEST_RESULTS_DIR%\\integration"
+                                    
+                                    dotnet test tests\\Integration\\CreditTransfer.Integration.Tests\\CreditTransfer.Integration.Tests.csproj ^
+                                        --configuration Release ^
+                                        --no-build ^
+                                        --filter "Category=Integration" ^
+                                        --results-directory %TEST_RESULTS_DIR%\\integration ^
+                                        --logger trx ^
+                                        --verbosity normal
+                                '''
+                            }
                         }
                     }
                     post {
@@ -314,37 +446,68 @@ pipeline {
                         script {
                             echo "🐳 Building Docker Images"
                             
-                            bat '''
-                                cd Migrated
-                                docker build ^
-                                    --file src\\Services\\WebServices\\CreditTransferService\\Dockerfile ^
-                                    --tag %WCF_IMAGE% ^
-                                    --tag %DOCKER_REGISTRY%/%PROJECT_NAME%-wcf:latest ^
-                                    --build-arg BUILD_CONFIGURATION=Release ^
-                                    --build-arg VERSION=%VERSION% ^
-                                    .
-                                
-                                docker build ^
-                                    --file src\\Services\\ApiServices\\CreditTransferApi\\Dockerfile ^
-                                    --tag %API_IMAGE% ^
-                                    --tag %DOCKER_REGISTRY%/%PROJECT_NAME%-api:latest ^
-                                    --build-arg BUILD_CONFIGURATION=Release ^
-                                    --build-arg VERSION=%VERSION% ^
-                                    .
-                                
-                                docker build ^
-                                    --file src\\Services\\WorkerServices\\CreditTransferWorker\\Dockerfile ^
-                                    --tag %WORKER_IMAGE% ^
-                                    --tag %DOCKER_REGISTRY%/%PROJECT_NAME%-worker:latest ^
-                                    --build-arg BUILD_CONFIGURATION=Release ^
-                                    --build-arg VERSION=%VERSION% ^
-                                    .
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    cd Migrated
+                                    docker build \
+                                        --file src/Services/WebServices/CreditTransferService/Dockerfile \
+                                        --tag $WCF_IMAGE \
+                                        --tag $DOCKER_REGISTRY/$PROJECT_NAME-wcf:latest \
+                                        --build-arg BUILD_CONFIGURATION=Release \
+                                        --build-arg VERSION=$VERSION \
+                                        .
+                                    
+                                    docker build \
+                                        --file src/Services/ApiServices/CreditTransferApi/Dockerfile \
+                                        --tag $API_IMAGE \
+                                        --tag $DOCKER_REGISTRY/$PROJECT_NAME-api:latest \
+                                        --build-arg BUILD_CONFIGURATION=Release \
+                                        --build-arg VERSION=$VERSION \
+                                        .
+                                    
+                                    docker build \
+                                        --file src/Services/WorkerServices/CreditTransferWorker/Dockerfile \
+                                        --tag $WORKER_IMAGE \
+                                        --tag $DOCKER_REGISTRY/$PROJECT_NAME-worker:latest \
+                                        --build-arg BUILD_CONFIGURATION=Release \
+                                        --build-arg VERSION=$VERSION \
+                                        .
+                                '''
+                            } else {
+                                bat '''
+                                    cd Migrated
+                                    docker build ^
+                                        --file src\\Services\\WebServices\\CreditTransferService\\Dockerfile ^
+                                        --tag %WCF_IMAGE% ^
+                                        --tag %DOCKER_REGISTRY%/%PROJECT_NAME%-wcf:latest ^
+                                        --build-arg BUILD_CONFIGURATION=Release ^
+                                        --build-arg VERSION=%VERSION% ^
+                                        .
+                                    
+                                    docker build ^
+                                        --file src\\Services\\ApiServices\\CreditTransferApi\\Dockerfile ^
+                                        --tag %API_IMAGE% ^
+                                        --tag %DOCKER_REGISTRY%/%PROJECT_NAME%-api:latest ^
+                                        --build-arg BUILD_CONFIGURATION=Release ^
+                                        --build-arg VERSION=%VERSION% ^
+                                        .
+                                    
+                                    docker build ^
+                                        --file src\\Services\\WorkerServices\\CreditTransferWorker\\Dockerfile ^
+                                        --tag %WORKER_IMAGE% ^
+                                        --tag %DOCKER_REGISTRY%/%PROJECT_NAME%-worker:latest ^
+                                        --build-arg BUILD_CONFIGURATION=Release ^
+                                        --build-arg VERSION=%VERSION% ^
+                                        .
+                                '''
+                            }
                         }
                     }
                     post {
                         failure {
-                            notifyBuild('FAILED', 'Docker image build failed')
+                            script {
+                                sendNotification('FAILED', 'Docker image build failed')
+                            }
                         }
                     }
                 }
@@ -354,22 +517,41 @@ pipeline {
                         script {
                             echo "🔒 Scanning Docker images for vulnerabilities"
                             
-                            bat '''
-                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
-                                    -v %cd%:/root/.cache/ aquasec/trivy:latest image ^
-                                    --exit-code 0 --severity HIGH,CRITICAL ^
-                                    --format json --output trivy-wcf-report.json %WCF_IMAGE%
-                                
-                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
-                                    -v %cd%:/root/.cache/ aquasec/trivy:latest image ^
-                                    --exit-code 0 --severity HIGH,CRITICAL ^
-                                    --format json --output trivy-api-report.json %API_IMAGE%
-                                
-                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
-                                    -v %cd%:/root/.cache/ aquasec/trivy:latest image ^
-                                    --exit-code 0 --severity HIGH,CRITICAL ^
-                                    --format json --output trivy-worker-report.json %WORKER_IMAGE%
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                        -v $PWD:/root/.cache/ aquasec/trivy:latest image \
+                                        --exit-code 0 --severity HIGH,CRITICAL \
+                                        --format json --output trivy-wcf-report.json $WCF_IMAGE
+                                    
+                                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                        -v $PWD:/root/.cache/ aquasec/trivy:latest image \
+                                        --exit-code 0 --severity HIGH,CRITICAL \
+                                        --format json --output trivy-api-report.json $API_IMAGE
+                                    
+                                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                        -v $PWD:/root/.cache/ aquasec/trivy:latest image \
+                                        --exit-code 0 --severity HIGH,CRITICAL \
+                                        --format json --output trivy-worker-report.json $WORKER_IMAGE
+                                '''
+                            } else {
+                                bat '''
+                                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
+                                        -v %cd%:/root/.cache/ aquasec/trivy:latest image ^
+                                        --exit-code 0 --severity HIGH,CRITICAL ^
+                                        --format json --output trivy-wcf-report.json %WCF_IMAGE%
+                                    
+                                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
+                                        -v %cd%:/root/.cache/ aquasec/trivy:latest image ^
+                                        --exit-code 0 --severity HIGH,CRITICAL ^
+                                        --format json --output trivy-api-report.json %API_IMAGE%
+                                    
+                                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ^
+                                        -v %cd%:/root/.cache/ aquasec/trivy:latest image ^
+                                        --exit-code 0 --severity HIGH,CRITICAL ^
+                                        --format json --output trivy-worker-report.json %WORKER_IMAGE%
+                                '''
+                            }
                         }
                     }
                     post {
@@ -393,7 +575,9 @@ pipeline {
             }
             post {
                 failure {
-                    notifyBuild('FAILED', 'Quality gate failed')
+                    script {
+                        sendNotification('FAILED', 'Quality gate failed')
+                    }
                 }
             }
         }
@@ -413,17 +597,31 @@ pipeline {
                             echo "📤 Pushing Images to Registry"
                             
                             withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                                bat '''
-                                    echo %DOCKER_PASSWORD% | docker login -u %DOCKER_USERNAME% --password-stdin
-                                    
-                                    docker push %WCF_IMAGE%
-                                    docker push %API_IMAGE%
-                                    docker push %WORKER_IMAGE%
-                                    
-                                    docker push %DOCKER_REGISTRY%/%PROJECT_NAME%-wcf:latest
-                                    docker push %DOCKER_REGISTRY%/%PROJECT_NAME%-api:latest
-                                    docker push %DOCKER_REGISTRY%/%PROJECT_NAME%-worker:latest
-                                '''
+                                if (isUnix()) {
+                                    sh '''
+                                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                                        
+                                        docker push $WCF_IMAGE
+                                        docker push $API_IMAGE
+                                        docker push $WORKER_IMAGE
+                                        
+                                        docker push $DOCKER_REGISTRY/$PROJECT_NAME-wcf:latest
+                                        docker push $DOCKER_REGISTRY/$PROJECT_NAME-api:latest
+                                        docker push $DOCKER_REGISTRY/$PROJECT_NAME-worker:latest
+                                    '''
+                                } else {
+                                    bat '''
+                                        echo %DOCKER_PASSWORD% | docker login -u %DOCKER_USERNAME% --password-stdin
+                                        
+                                        docker push %WCF_IMAGE%
+                                        docker push %API_IMAGE%
+                                        docker push %WORKER_IMAGE%
+                                        
+                                        docker push %DOCKER_REGISTRY%/%PROJECT_NAME%-wcf:latest
+                                        docker push %DOCKER_REGISTRY%/%PROJECT_NAME%-api:latest
+                                        docker push %DOCKER_REGISTRY%/%PROJECT_NAME%-worker:latest
+                                    '''
+                                }
                             }
                         }
                     }
@@ -434,10 +632,17 @@ pipeline {
                         script {
                             echo "📦 Uploading artifacts to Nexus"
                             
-                            bat '''
-                                cd Migrated
-                                powershell -Command "Compress-Archive -Path 'publish\\*' -DestinationPath 'CreditTransfer-%VERSION%.zip'"
-                            '''
+                            if (isUnix()) {
+                                sh '''
+                                    cd Migrated
+                                    zip -r CreditTransfer-$VERSION.zip publish/*
+                                '''
+                            } else {
+                                bat '''
+                                    cd Migrated
+                                    powershell -Command "Compress-Archive -Path 'publish\\*' -DestinationPath 'CreditTransfer-%VERSION%.zip'"
+                                '''
+                            }
                             
                             nexusArtifactUploader(
                                 nexusVersion: 'nexus3',
@@ -460,7 +665,9 @@ pipeline {
             }
             post {
                 failure {
-                    notifyBuild('FAILED', 'Artifact publishing failed')
+                    script {
+                        sendNotification('FAILED', 'Artifact publishing failed')
+                    }
                 }
             }
         }
@@ -476,23 +683,39 @@ pipeline {
                 script {
                     echo "🚀 Deploying to Staging Environment"
                     
-                    bat '''
-                        cd Migrated\\deployment
-                        docker-compose -f docker-compose.yml down || echo "No existing deployment"
-                        docker-compose -f docker-compose.yml up -d
-                        
-                        timeout /t 30
-                        
-                        docker-compose -f docker-compose.yml ps
-                    '''
+                    if (isUnix()) {
+                        sh '''
+                            cd Migrated/deployment
+                            docker-compose -f docker-compose.yml down || echo "No existing deployment"
+                            docker-compose -f docker-compose.yml up -d
+                            
+                            sleep 30
+                            
+                            docker-compose -f docker-compose.yml ps
+                        '''
+                    } else {
+                        bat '''
+                            cd Migrated\\deployment
+                            docker-compose -f docker-compose.yml down || echo "No existing deployment"
+                            docker-compose -f docker-compose.yml up -d
+                            
+                            timeout /t 30
+                            
+                            docker-compose -f docker-compose.yml ps
+                        '''
+                    }
                 }
             }
             post {
                 success {
-                    notifyBuild('SUCCESS', 'Successfully deployed to staging')
+                    script {
+                        sendNotification('SUCCESS', 'Successfully deployed to staging')
+                    }
                 }
                 failure {
-                    notifyBuild('FAILED', 'Staging deployment failed')
+                    script {
+                        sendNotification('FAILED', 'Staging deployment failed')
+                    }
                 }
             }
         }
@@ -514,17 +737,31 @@ pipeline {
                     if (deployApproval == 'Deploy') {
                         echo "🎯 Deploying to Production Environment"
                         
-                        bat '''
-                            cd Migrated\\deployment
-                            docker-compose -f docker-compose.yml down || echo "No existing deployment"
-                            
-                            copy env.prod .env
-                            docker-compose -f docker-compose.yml up -d
-                            
-                            timeout /t 30
-                            
-                            docker-compose -f docker-compose.yml ps
-                        '''
+                        if (isUnix()) {
+                            sh '''
+                                cd Migrated/deployment
+                                docker-compose -f docker-compose.yml down || echo "No existing deployment"
+                                
+                                cp env.prod .env
+                                docker-compose -f docker-compose.yml up -d
+                                
+                                sleep 30
+                                
+                                docker-compose -f docker-compose.yml ps
+                            '''
+                        } else {
+                            bat '''
+                                cd Migrated\\deployment
+                                docker-compose -f docker-compose.yml down || echo "No existing deployment"
+                                
+                                copy env.prod .env
+                                docker-compose -f docker-compose.yml up -d
+                                
+                                timeout /t 30
+                                
+                                docker-compose -f docker-compose.yml ps
+                            '''
+                        }
                     } else {
                         echo "❌ Production deployment aborted by user"
                         currentBuild.result = 'ABORTED'
@@ -533,10 +770,14 @@ pipeline {
             }
             post {
                 success {
-                    notifyBuild('SUCCESS', 'Successfully deployed to production')
+                    script {
+                        sendNotification('SUCCESS', 'Successfully deployed to production')
+                    }
                 }
                 failure {
-                    notifyBuild('FAILED', 'Production deployment failed')
+                    script {
+                        sendNotification('FAILED', 'Production deployment failed')
+                    }
                 }
             }
         }
@@ -544,52 +785,83 @@ pipeline {
     
     post {
         always {
-            script {
-                echo "🧹 Performing cleanup tasks"
-                
-                // Clean up Docker images
-                bat '''
-                    docker image prune -f || echo "No images to prune"
-                    docker system df
-                '''
-                
-                // Archive important logs
-                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+            node {
+                script {
+                    echo "🧹 Performing cleanup tasks"
+                    
+                    // Clean up Docker images
+                    if (isUnix()) {
+                        sh '''
+                            docker image prune -f || echo "No images to prune"
+                            docker system df
+                        '''
+                    } else {
+                        bat '''
+                            docker image prune -f || echo "No images to prune"
+                            docker system df
+                        '''
+                    }
+                    
+                    // Archive important logs
+                    archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                }
             }
         }
         
         success {
-            script {
-                notifyBuild('SUCCESS', 'Pipeline completed successfully')
-                
-                // Update deployment status
-                bat '''
-                    echo Pipeline completed successfully at %date% %time% > deployment-status.txt
-                '''
-                archiveArtifacts artifacts: 'deployment-status.txt'
+            node {
+                script {
+                    sendNotification('SUCCESS', 'Pipeline completed successfully')
+                    
+                    // Update deployment status
+                    if (isUnix()) {
+                        sh '''
+                            echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                        '''
+                    } else {
+                        bat '''
+                            echo Pipeline completed successfully at %date% %time% > deployment-status.txt
+                        '''
+                    }
+                    archiveArtifacts artifacts: 'deployment-status.txt'
+                }
             }
         }
         
         failure {
-            script {
-                notifyBuild('FAILED', 'Pipeline failed')
-                
-                // Collect failure information
-                bat '''
-                    echo Pipeline failed at %date% %time% > failure-status.txt
-                    docker ps -a >> failure-status.txt
-                    docker images >> failure-status.txt
-                '''
-                archiveArtifacts artifacts: 'failure-status.txt'
+            node {
+                script {
+                    sendNotification('FAILED', 'Pipeline failed')
+                    
+                    // Collect failure information
+                    if (isUnix()) {
+                        sh '''
+                            echo "Pipeline failed at $(date)" > failure-status.txt
+                            docker ps -a >> failure-status.txt
+                            docker images >> failure-status.txt
+                        '''
+                    } else {
+                        bat '''
+                            echo Pipeline failed at %date% %time% > failure-status.txt
+                            docker ps -a >> failure-status.txt
+                            docker images >> failure-status.txt
+                        '''
+                    }
+                    archiveArtifacts artifacts: 'failure-status.txt'
+                }
             }
         }
         
         unstable {
-            notifyBuild('UNSTABLE', 'Pipeline completed with issues')
+            script {
+                sendNotification('UNSTABLE', 'Pipeline completed with issues')
+            }
         }
         
         aborted {
-            notifyBuild('ABORTED', 'Pipeline was aborted')
+            script {
+                sendNotification('ABORTED', 'Pipeline was aborted')
+            }
         }
     }
 }
@@ -619,6 +891,54 @@ def notifyBuild(String buildStatus, String message) {
             teamDomain: 'your-team',
             token: 'slack-token'
         )
+    } catch (Exception e) {
+        echo "Slack notification failed: ${e.getMessage()}"
+    }
+    
+    // Email notification
+    try {
+        emailext(
+            subject: subject,
+            body: details,
+            to: env.EMAIL_RECIPIENTS,
+            mimeType: 'text/plain'
+        )
+    } catch (Exception e) {
+        echo "Email notification failed: ${e.getMessage()}"
+    }
+} 
+
+def sendNotification(String buildStatus, String message) {
+    def colorCode = buildStatus == 'SUCCESS' ? 'good' : 
+                   buildStatus == 'UNSTABLE' ? 'warning' : 'danger'
+    
+    def subject = "${buildStatus}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'"
+    def summary = "${subject} - ${message}"
+    def details = """
+        *Project*: ${env.JOB_NAME}
+        *Build Number*: ${env.BUILD_NUMBER}
+        *Status*: ${buildStatus}
+        *Message*: ${message}
+        *Branch*: ${env.BRANCH_NAME}
+        *Version*: ${env.VERSION}
+        *Build URL*: ${env.BUILD_URL}
+    """
+    
+    // Slack notification (only if plugin is available)
+    try {
+        if (env.SLACK_CHANNEL) {
+            def slackResponse = slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: colorCode,
+                message: summary,
+                teamDomain: 'your-team',
+                token: 'slack-token',
+                failOnError: false
+            )
+            if (!slackResponse) {
+                echo "Slack notification skipped - plugin not available"
+            }
+        }
     } catch (Exception e) {
         echo "Slack notification failed: ${e.getMessage()}"
     }
