@@ -36,11 +36,6 @@ pipeline {
         // Notification
         SLACK_CHANNEL = '#ci-cd-notifications'
         EMAIL_RECIPIENTS = 'dev-team@company.com'
-        
-        // Cross-platform commands
-        MKDIR_CMD = isUnix() ? 'mkdir -p' : 'mkdir'
-        CD_CMD = isUnix() ? 'cd' : 'cd'
-        PATH_SEPARATOR = isUnix() ? '/' : '\\'
     }
     
     options {
@@ -66,6 +61,11 @@ pipeline {
                     echo "🏷️  Version: ${VERSION}"
                     echo "🖥️  Agent: ${env.NODE_NAME}"
                     echo "🌿 Branch: ${env.BRANCH_NAME}"
+                    
+                    // Set platform-specific commands
+                    env.MKDIR_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "mkdir -p"; else echo "mkdir"; fi', returnStdout: true).trim()
+                    env.CD_CMD = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "cd"; else echo "cd"; fi', returnStdout: true).trim()
+                    env.PATH_SEPARATOR = sh(script: 'if [ "$(uname)" = "Linux" ]; then echo "/"; else echo "\\\\"; fi', returnStdout: true).trim()
                     
                     // Checkout code
                     checkout scm
@@ -785,70 +785,64 @@ pipeline {
     
     post {
         always {
-            node {
-                script {
-                    echo "🧹 Performing cleanup tasks"
-                    
-                    // Clean up Docker images
-                    if (isUnix()) {
-                        sh '''
-                            docker image prune -f || echo "No images to prune"
-                            docker system df
-                        '''
-                    } else {
-                        bat '''
-                            docker image prune -f || echo "No images to prune"
-                            docker system df
-                        '''
-                    }
-                    
-                    // Archive important logs
-                    archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+            script {
+                echo "🧹 Performing cleanup tasks"
+                
+                // Clean up Docker images
+                if (isUnix()) {
+                    sh '''
+                        docker image prune -f || echo "No images to prune"
+                        docker system df
+                    '''
+                } else {
+                    bat '''
+                        docker image prune -f || echo "No images to prune"
+                        docker system df
+                    '''
                 }
+                
+                // Archive important logs
+                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
             }
         }
         
         success {
-            node {
-                script {
-                    sendNotification('SUCCESS', 'Pipeline completed successfully')
-                    
-                    // Update deployment status
-                    if (isUnix()) {
-                        sh '''
-                            echo "Pipeline completed successfully at $(date)" > deployment-status.txt
-                        '''
-                    } else {
-                        bat '''
-                            echo Pipeline completed successfully at %date% %time% > deployment-status.txt
-                        '''
-                    }
-                    archiveArtifacts artifacts: 'deployment-status.txt'
+            script {
+                sendNotification('SUCCESS', 'Pipeline completed successfully')
+                
+                // Update deployment status
+                if (isUnix()) {
+                    sh '''
+                        echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                    '''
+                } else {
+                    bat '''
+                        echo Pipeline completed successfully at %date% %time% > deployment-status.txt
+                    '''
                 }
+                archiveArtifacts artifacts: 'deployment-status.txt'
             }
         }
         
         failure {
-            node {
-                script {
-                    sendNotification('FAILED', 'Pipeline failed')
-                    
-                    // Collect failure information
-                    if (isUnix()) {
-                        sh '''
-                            echo "Pipeline failed at $(date)" > failure-status.txt
-                            docker ps -a >> failure-status.txt
-                            docker images >> failure-status.txt
-                        '''
-                    } else {
-                        bat '''
-                            echo Pipeline failed at %date% %time% > failure-status.txt
-                            docker ps -a >> failure-status.txt
-                            docker images >> failure-status.txt
-                        '''
-                    }
-                    archiveArtifacts artifacts: 'failure-status.txt'
+            script {
+                sendNotification('FAILED', 'Pipeline failed')
+                
+                // Collect failure information
+                if (isUnix()) {
+                    sh '''
+                        echo "Pipeline failed at $(date)" > failure-status.txt
+                        docker ps -a >> failure-status.txt
+                        docker images >> failure-status.txt
+                    '''
+                } else {
+                    bat '''
+                        echo Pipeline failed at %date% %time% > failure-status.txt
+                        docker ps -a >> failure-status.txt
+                        docker images >> failure-status.txt
+                    '''
                 }
+                archiveArtifacts artifacts: 'failure-status.txt'
             }
         }
         
@@ -865,48 +859,6 @@ pipeline {
         }
     }
 }
-
-def notifyBuild(String buildStatus, String message) {
-    def colorCode = buildStatus == 'SUCCESS' ? 'good' : 
-                   buildStatus == 'UNSTABLE' ? 'warning' : 'danger'
-    
-    def subject = "${buildStatus}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'"
-    def summary = "${subject} - ${message}"
-    def details = """
-        *Project*: ${env.JOB_NAME}
-        *Build Number*: ${env.BUILD_NUMBER}
-        *Status*: ${buildStatus}
-        *Message*: ${message}
-        *Branch*: ${env.BRANCH_NAME}
-        *Version*: ${env.VERSION}
-        *Build URL*: ${env.BUILD_URL}
-    """
-    
-    // Slack notification
-    try {
-        slackSend(
-            channel: env.SLACK_CHANNEL,
-            color: colorCode,
-            message: summary,
-            teamDomain: 'your-team',
-            token: 'slack-token'
-        )
-    } catch (Exception e) {
-        echo "Slack notification failed: ${e.getMessage()}"
-    }
-    
-    // Email notification
-    try {
-        emailext(
-            subject: subject,
-            body: details,
-            to: env.EMAIL_RECIPIENTS,
-            mimeType: 'text/plain'
-        )
-    } catch (Exception e) {
-        echo "Email notification failed: ${e.getMessage()}"
-    }
-} 
 
 def sendNotification(String buildStatus, String message) {
     def colorCode = buildStatus == 'SUCCESS' ? 'good' : 
