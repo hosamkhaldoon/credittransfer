@@ -28,10 +28,11 @@ pipeline {
         // Notification
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
         
-        // .NET SDK version
+        // .NET SDK version and configuration
         DOTNET_VERSION = '8.0.100'
         DOTNET_ROOT = "${WORKSPACE}/.dotnet"
         PATH = "${DOTNET_ROOT}:${PATH}"
+        DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = '1'  // Allow running without ICU
     }
     
     options {
@@ -57,15 +58,6 @@ pipeline {
                         mkdir -p ${SECURITY_SCAN_DIR}
                     '''
                     
-                    // Install ICU package first
-                    sh '''#!/bin/bash
-                        echo "Installing ICU package..."
-                        if ! dpkg -l | grep -q libicu; then
-                            sudo apt-get update
-                            sudo apt-get install -y libicu-dev
-                        fi
-                    '''
-                    
                     // Install .NET SDK
                     sh '''#!/bin/bash
                         # Download and install .NET SDK
@@ -88,12 +80,13 @@ pipeline {
                             
                             # Add to PATH
                             export PATH="${DOTNET_ROOT}:${PATH}"
+                            export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
                         fi
                         
                         # Verify .NET installation
                         if [ -f ${DOTNET_ROOT}/dotnet ]; then
                             echo ".NET SDK installed successfully"
-                            ${DOTNET_ROOT}/dotnet --info || {
+                            DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${DOTNET_ROOT}/dotnet --info || {
                                 echo "Failed to run dotnet --info. Error code: $?"
                                 exit 1
                             }
@@ -121,8 +114,9 @@ pipeline {
                     
                     // Verify environment
                     sh '''#!/bin/bash
-                        # Add to PATH
+                        # Add to PATH and set globalization invariant
                         export PATH="${DOTNET_ROOT}:${PATH}"
+                        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
                         
                         echo "Checking .NET SDK version:"
                         ${DOTNET_ROOT}/dotnet --info
