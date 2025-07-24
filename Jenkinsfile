@@ -26,11 +26,10 @@ pipeline {
         KUBERNETES_NAMESPACE = 'credittransfer'
         
         // Notification
-        SLACK_CHANNEL = '#ci-cd-notifications'
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
         
         // .NET SDK version
-        DOTNET_VERSION = '8.0'
+        DOTNET_VERSION = '8.0.100'
         DOTNET_ROOT = "${WORKSPACE}/.dotnet"
         PATH = "${DOTNET_ROOT}:${PATH}"
     }
@@ -63,7 +62,7 @@ pipeline {
                         # Download and install .NET SDK
                         if [ ! -f ${DOTNET_ROOT}/dotnet ]; then
                             echo "Installing .NET SDK ${DOTNET_VERSION}..."
-                            curl -sSL https://dot.net/v1/dotnet-install.sh > dotnet-install.sh
+                            curl -L https://aka.ms/install-dotnet-sh > dotnet-install.sh
                             chmod +x ./dotnet-install.sh
                             ./dotnet-install.sh --version ${DOTNET_VERSION} --install-dir ${DOTNET_ROOT}
                             rm dotnet-install.sh
@@ -294,19 +293,5 @@ def notifyBuild(String buildStatus, String message) {
         )
     } catch (Exception e) {
         echo "Email notification failed: ${e.getMessage()}"
-    }
-    
-    // Slack notification (optional, only if plugin is available)
-    try {
-        if (env.SLACK_CHANNEL) {
-            slackSend(
-                channel: env.SLACK_CHANNEL,
-                color: colorCode,
-                message: summary,
-                failOnError: false
-            )
-        }
-    } catch (Exception e) {
-        echo "Slack notification failed: ${e.getMessage()}"
     }
 } 
