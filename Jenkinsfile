@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Project Configuration
-        SOLUTION_FILE = 'Migrated/CreditTransfer.Modern.sln'
+        SOLUTION_FILE = 'CreditTransfer.Modern.sln'  // Updated path
         PROJECT_NAME = 'credittransfer'
         SONAR_HOST_URL = 'http://localhost:9000'
         NEXUS_URL = 'http://localhost:8081'
@@ -112,6 +112,16 @@ pipeline {
                     // Checkout code
                     checkout scm
                     
+                    // List workspace contents
+                    sh '''#!/bin/bash
+                        echo "Workspace contents:"
+                        ls -la
+                        
+                        # Find all .sln files
+                        echo "Finding solution files:"
+                        find . -name "*.sln" -type f
+                    '''
+                    
                     // Verify environment
                     sh '''#!/bin/bash
                         # Add to PATH and set globalization invariant
@@ -147,9 +157,17 @@ pipeline {
                 script {
                     echo "📦 Restoring NuGet packages"
                     sh '''#!/bin/bash
-                        cd Migrated
-                        ${DOTNET_ROOT}/dotnet clean ${SOLUTION_FILE}
-                        ${DOTNET_ROOT}/dotnet restore ${SOLUTION_FILE} --verbosity normal
+                        # Verify solution file exists
+                        if [ ! -f "${SOLUTION_FILE}" ]; then
+                            echo "Error: Solution file not found at ${SOLUTION_FILE}"
+                            echo "Current directory contents:"
+                            ls -la
+                            exit 1
+                        fi
+                        
+                        # Restore packages
+                        ${DOTNET_ROOT}/dotnet clean "${SOLUTION_FILE}"
+                        ${DOTNET_ROOT}/dotnet restore "${SOLUTION_FILE}" --verbosity normal
                     '''
                 }
             }
