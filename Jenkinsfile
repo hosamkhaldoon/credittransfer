@@ -56,7 +56,7 @@ pipeline {
     
     tools {
         // Tool Configuration for Windows
-        dotnet 'DotNet-8.0'
+        dotnetsdk 'DotNet-8.0'
     }
     
     stages {
