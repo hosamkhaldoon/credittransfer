@@ -62,16 +62,29 @@ pipeline {
                         # Download and install .NET SDK
                         if [ ! -f ${DOTNET_ROOT}/dotnet ]; then
                             echo "Installing .NET SDK ${DOTNET_VERSION}..."
-                            curl -L https://aka.ms/install-dotnet-sh > dotnet-install.sh
+                            
+                            # Download the script directly from Microsoft
+                            curl -SL --retry 3 --retry-delay 5 https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -o dotnet-install.sh
+                            
+                            # Verify the download
+                            if [ ! -f dotnet-install.sh ]; then
+                                echo "Failed to download dotnet-install.sh"
+                                exit 1
+                            fi
+                            
+                            # Make it executable and run
                             chmod +x ./dotnet-install.sh
-                            ./dotnet-install.sh --version ${DOTNET_VERSION} --install-dir ${DOTNET_ROOT}
+                            ./dotnet-install.sh --version ${DOTNET_VERSION} --install-dir ${DOTNET_ROOT} --verbose
                             rm dotnet-install.sh
+                            
+                            # Add to PATH
+                            export PATH="${DOTNET_ROOT}:${PATH}"
                         fi
                         
                         # Verify .NET installation
                         if [ -f ${DOTNET_ROOT}/dotnet ]; then
                             echo ".NET SDK installed successfully"
-                            ${DOTNET_ROOT}/dotnet --version
+                            ${DOTNET_ROOT}/dotnet --info
                         else
                             echo ".NET SDK installation failed"
                             exit 1
@@ -96,8 +109,11 @@ pipeline {
                     
                     // Verify environment
                     sh '''#!/bin/bash
+                        # Add to PATH
+                        export PATH="${DOTNET_ROOT}:${PATH}"
+                        
                         echo "Checking .NET SDK version:"
-                        ${DOTNET_ROOT}/dotnet --version || echo ".NET SDK not available"
+                        ${DOTNET_ROOT}/dotnet --info
                         
                         echo "Restoring .NET tools:"
                         ${DOTNET_ROOT}/dotnet tool restore || echo "Tool restore failed"
