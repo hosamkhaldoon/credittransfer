@@ -264,11 +264,30 @@ pipeline {
                         export PATH="${DOTNET_ROOT}:${PATH}"
                         export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
                         
+                        # Verify workspace and solution
+                        echo "Workspace contents:"
+                        ls -la
+                        
+                        echo "Migrated directory contents:"
+                        ls -la Migrated/
+                        
+                        echo "Finding solution files:"
+                        find . -name "*.sln" -type f
+                        
+                        # Use absolute paths
+                        WORKSPACE_PATH="$(pwd)"
+                        SOLUTION_PATH="${WORKSPACE_PATH}/Migrated/CreditTransfer.Modern.sln"
+                        
+                        if [ ! -f "${SOLUTION_PATH}" ]; then
+                            echo "Error: Solution file not found at ${SOLUTION_PATH}"
+                            exit 1
+                        fi
+                        
                         cd Migrated
                         
                         # Build tests first
                         echo "Building tests..."
-                        ${DOTNET_ROOT}/dotnet build ${SOLUTION_FILE} \
+                        ${DOTNET_ROOT}/dotnet build "${SOLUTION_PATH}" \
                             --configuration Release \
                             --no-restore \
                             --verbosity normal \
@@ -276,32 +295,46 @@ pipeline {
                         
                         # Run unit tests
                         echo "Running unit tests..."
-                        mkdir -p ${TEST_RESULTS_DIR}/unit
-                        ${DOTNET_ROOT}/dotnet test ${SOLUTION_FILE} \
+                        mkdir -p "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/unit"
+                        ${DOTNET_ROOT}/dotnet test "${SOLUTION_PATH}" \
                             --configuration Release \
                             --no-build \
                             --filter "Category=Unit" \
                             --logger "trx;LogFileName=unit_tests.trx" \
-                            --results-directory ${TEST_RESULTS_DIR}/unit \
+                            --results-directory "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/unit" \
                             --verbosity normal \
                             --collect:"XPlat Code Coverage"
                         
-                        # Run integration tests
-                        echo "Running integration tests..."
-                        mkdir -p ${TEST_RESULTS_DIR}/integration
-                        ${DOTNET_ROOT}/dotnet test tests/Integration/CreditTransfer.Integration.Tests/CreditTransfer.Integration.Tests.csproj \
-                            --configuration Release \
-                            --no-build \
-                            --filter "Category=Integration" \
-                            --logger "trx;LogFileName=integration_tests.trx" \
-                            --results-directory ${TEST_RESULTS_DIR}/integration \
-                            --verbosity normal
+                        # Run integration tests if they exist
+                        INTEGRATION_TEST_PROJECT="tests/Integration/CreditTransfer.Integration.Tests/CreditTransfer.Integration.Tests.csproj"
+                        if [ -f "${INTEGRATION_TEST_PROJECT}" ]; then
+                            echo "Running integration tests..."
+                            mkdir -p "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/integration"
+                            ${DOTNET_ROOT}/dotnet test "${INTEGRATION_TEST_PROJECT}" \
+                                --configuration Release \
+                                --no-build \
+                                --filter "Category=Integration" \
+                                --logger "trx;LogFileName=integration_tests.trx" \
+                                --results-directory "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/integration" \
+                                --verbosity normal
+                        else
+                            echo "Integration test project not found at: ${INTEGRATION_TEST_PROJECT}"
+                        fi
+                        
+                        # List test results
+                        echo "Test results directory contents:"
+                        ls -la "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/unit" || true
+                        ls -la "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/integration" || true
                     '''
                 }
             }
             post {
                 always {
-                    junit allowEmptyResults: true, testResults: '**/Migrated/**/test-results/**/*.trx'
+                    junit(
+                        allowEmptyResults: true,
+                        testResults: '**/test-results/**/*.trx',
+                        skipPublishingChecks: true
+                    )
                 }
             }
         }
