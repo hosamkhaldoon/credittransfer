@@ -15,6 +15,11 @@ pipeline {
         TEST_RESULTS_DIR = 'test-results'
         COVERAGE_DIR = 'coverage'
         
+        // Docker Configuration
+        DOCKER_REGISTRY = ''  // Empty for Docker Hub, or 'your-registry.azurecr.io' for Azure, etc.
+        DOCKER_NAMESPACE = 'dockerhosam'  // Replace with your Docker Hub username or organization
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        
         // Notification
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
         
@@ -205,6 +210,149 @@ pipeline {
             post {
                 success {
                     archiveArtifacts artifacts: 'Migrated/publish/**/*', fingerprint: true, allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('🐳 Build Docker Images') {
+            steps {
+                script {
+                    echo "🐳 Building Docker images"
+                    sh '''#!/bin/bash
+                        # Check if Docker is available
+                        if ! command -v docker &> /dev/null; then
+                            echo "⚠️ Docker not found, attempting installation..."
+                            
+                            # Try to install Docker (best effort)
+                            if command -v apt-get &> /dev/null; then
+                                echo "Installing Docker via apt-get..."
+                                apt-get update -qq && apt-get install -y docker.io || {
+                                    echo "❌ Failed to install Docker via apt-get"
+                                    echo "Please install Docker on the Jenkins agent or use a Docker-enabled agent"
+                                    exit 1
+                                }
+                            elif command -v yum &> /dev/null; then
+                                echo "Installing Docker via yum..."
+                                yum install -y docker || {
+                                    echo "❌ Failed to install Docker via yum"
+                                    exit 1
+                                }
+                            else
+                                echo "❌ No package manager found to install Docker"
+                                echo "Please install Docker manually on the Jenkins agent"
+                                exit 1
+                            fi
+                        fi
+                        
+                        # Verify Docker is working
+                        docker --version || {
+                            echo "❌ Docker installation failed or not accessible"
+                            exit 1
+                        }
+                        
+                        echo "✅ Docker is available: $(docker --version)"
+                        
+                        cd Migrated
+                        
+                        # Build WCF Service Docker Image
+                        echo "Building WCF Service Docker image..."
+                        if [ -f "src/Services/WebServices/CreditTransferService/Dockerfile" ]; then
+                            docker build -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/wcf-service:${DOCKER_TAG} \
+                                -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/wcf-service:latest \
+                                -f src/Services/WebServices/CreditTransferService/Dockerfile .
+                        else
+                            echo "⚠️ Dockerfile not found for WCF Service, skipping..."
+                        fi
+                        
+                        # Build REST API Docker Image
+                        echo "Building REST API Docker image..."
+                        if [ -f "src/Services/ApiServices/CreditTransferApi/Dockerfile" ]; then
+                            docker build -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/rest-api:${DOCKER_TAG} \
+                                -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/rest-api:latest \
+                                -f src/Services/ApiServices/CreditTransferApi/Dockerfile .
+                        else
+                            echo "⚠️ Dockerfile not found for REST API, skipping..."
+                        fi
+                        
+                        # Build Worker Service Docker Image
+                        echo "Building Worker Service Docker image..."
+                        if [ -f "src/Services/WorkerServices/CreditTransferWorker/Dockerfile" ]; then
+                            docker build -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/worker-service:${DOCKER_TAG} \
+                                -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/worker-service:latest \
+                                -f src/Services/WorkerServices/CreditTransferWorker/Dockerfile .
+                        else
+                            echo "⚠️ Dockerfile not found for Worker Service, skipping..."
+                        fi
+                        
+                        # List built images
+                        echo "Built Docker images:"
+                        docker images | grep ${DOCKER_NAMESPACE} || echo "No images built"
+                    '''
+                }
+            }
+        }
+
+        stage('📦 Push Docker Images') {
+            when {
+                // Only push if we're on main branch and have credentials
+                allOf {
+                    branch 'main'
+                    expression { return env.DOCKER_HUB_CREDENTIALS != null }
+                }
+            }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', 
+                                                usernameVariable: 'DOCKER_USERNAME', 
+                                                passwordVariable: 'DOCKER_PASSWORD')]) {
+                    script {
+                        echo "📦 Pushing Docker images to registry"
+                        sh '''#!/bin/bash
+                            # Login to Docker registry
+                            echo "Logging in to Docker registry..."
+                            echo "$DOCKER_PASSWORD" | docker login ${DOCKER_REGISTRY} -u "$DOCKER_USERNAME" --password-stdin || {
+                                echo "❌ Failed to login to Docker registry"
+                                exit 1
+                            }
+                            
+                            # Push WCF Service image
+                            if docker images | grep -q "${DOCKER_NAMESPACE}/wcf-service"; then
+                                echo "Pushing WCF Service image..."
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/wcf-service:${DOCKER_TAG}
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/wcf-service:latest
+                            fi
+                            
+                            # Push REST API image
+                            if docker images | grep -q "${DOCKER_NAMESPACE}/rest-api"; then
+                                echo "Pushing REST API image..."
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/rest-api:${DOCKER_TAG}
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/rest-api:latest
+                            fi
+                            
+                            # Push Worker Service image
+                            if docker images | grep -q "${DOCKER_NAMESPACE}/worker-service"; then
+                                echo "Pushing Worker Service image..."
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/worker-service:${DOCKER_TAG}
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/worker-service:latest
+                            fi
+                            
+                            # Logout from registry
+                            docker logout ${DOCKER_REGISTRY}
+                            
+                            echo "✅ Docker images pushed successfully"
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    // Clean up local images to save space
+                    sh '''#!/bin/bash
+                        echo "🧹 Cleaning up local Docker images..."
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/wcf-service:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/rest-api:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/worker-service:${DOCKER_TAG} || true
+                        echo "✅ Cleanup completed"
+                    '''
                 }
             }
         }
