@@ -40,10 +40,6 @@ pipeline {
         DOCKER_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
     }
     
-    tools {
-        dockerTool 'docker'
-    }
-    
     options {
         timeout(time: 3, unit: 'HOURS')
         disableConcurrentBuilds()
@@ -74,6 +70,22 @@ pipeline {
                             chmod +x ./dotnet-install.sh
                             ./dotnet-install.sh --version ${DOTNET_VERSION} --install-dir ${DOTNET_ROOT} --verbose
                             rm dotnet-install.sh
+                        fi
+
+                        # Install Docker if not present
+                        if ! command -v docker &> /dev/null; then
+                            echo "Installing Docker..."
+                            curl -fsSL https://get.docker.com -o get-docker.sh
+                            chmod +x get-docker.sh
+                            sh ./get-docker.sh
+                            rm get-docker.sh
+                            
+                            # Start Docker service
+                            if command -v systemctl &> /dev/null; then
+                                systemctl start docker || true
+                            elif command -v service &> /dev/null; then
+                                service docker start || true
+                            fi
                         fi
 
                         # Verify installations
