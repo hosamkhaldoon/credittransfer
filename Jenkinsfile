@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'docker:dind'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
     
     environment {
         // Project Configuration
@@ -45,6 +40,10 @@ pipeline {
         DOCKER_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
     }
     
+    tools {
+        dockerTool 'docker'
+    }
+    
     options {
         timeout(time: 3, unit: 'HOURS')
         disableConcurrentBuilds()
@@ -77,9 +76,6 @@ pipeline {
                             rm dotnet-install.sh
                         fi
 
-                        # Install required packages
-                        apk add --no-cache bash curl git
-
                         # Verify installations
                         echo ".NET SDK version:"
                         DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${DOTNET_ROOT}/dotnet --info || {
@@ -93,162 +89,6 @@ pipeline {
                             exit 1
                         }
                     '''
-                }
-            }
-        }
-        
-        stage('🚀 Pipeline Initialization') {
-            steps {
-                script {
-                    echo "🚀 Starting CI/CD Pipeline for Credit Transfer Project"
-                    echo "📋 Build Number: ${BUILD_NUMBER}"
-                    echo "🔗 Git Commit: ${GIT_COMMIT_SHORT}"
-                    echo "🏷️  Version: ${VERSION}"
-                    echo "🖥️  Agent: ${env.NODE_NAME}"
-                    echo "🌿 Branch: ${env.BRANCH_NAME}"
-                    
-                    // Checkout code
-                    checkout scm
-                    
-                    // List workspace contents
-                    sh '''#!/bin/bash
-                        echo "Workspace contents:"
-                        ls -la
-                        
-                        echo "Migrated directory contents:"
-                        ls -la Migrated/
-                        
-                        # Find all .sln files
-                        echo "Finding solution files:"
-                        find . -name "*.sln" -type f
-                    '''
-                    
-                    // Verify environment
-                    sh '''#!/bin/bash
-                        # Add to PATH and set globalization invariant
-                        export PATH="${DOTNET_ROOT}:${PATH}"
-                        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-                        
-                        echo "Checking .NET SDK version:"
-                        ${DOTNET_ROOT}/dotnet --info
-                        
-                        echo "Restoring .NET tools:"
-                        ${DOTNET_ROOT}/dotnet tool restore || echo "Tool restore failed"
-                        
-                        echo "Listing global tools:"
-                        ${DOTNET_ROOT}/dotnet tool list --global || echo "Tool list failed"
-                        
-                        echo "Checking Git version:"
-                        git --version || echo "Git not available"
-                    '''
-                }
-            }
-            post {
-                failure {
-                    script {
-                        currentBuild.result = 'FAILED'
-                        notifyBuild('FAILED', 'Pipeline initialization failed')
-                    }
-                }
-            }
-        }
-        
-        stage('📦 Dependencies & Restore') {
-            steps {
-                script {
-                    echo "📦 Restoring NuGet packages"
-                    sh '''#!/bin/bash
-                        # Verify solution file exists
-                        if [ ! -f "${SOLUTION_FILE}" ]; then
-                            echo "Error: Solution file not found at ${SOLUTION_FILE}"
-                            echo "Current directory contents:"
-                            ls -la
-                            echo "Migrated directory contents:"
-                            ls -la Migrated/
-                            exit 1
-                        fi
-                        
-                        # Export environment variables
-                        export PATH="${DOTNET_ROOT}:${PATH}"
-                        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-                        
-                        # Restore packages
-                        echo "Cleaning solution..."
-                        ${DOTNET_ROOT}/dotnet clean "${SOLUTION_FILE}" --verbosity normal
-                        
-                        echo "Restoring packages..."
-                        ${DOTNET_ROOT}/dotnet restore "${SOLUTION_FILE}" --verbosity normal
-                    '''
-                }
-            }
-            post {
-                failure {
-                    script {
-                        notifyBuild('FAILED', 'Dependencies restore failed')
-                    }
-                }
-            }
-        }
-        
-        stage('🏗️ Build & Test') {
-            steps {
-                script {
-                    echo "🔨 Building .NET Solution"
-                    sh '''#!/bin/bash
-                        # Export environment variables
-                        export PATH="${DOTNET_ROOT}:${PATH}"
-                        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-
-                        cd Migrated
-
-                        # First build the entire solution
-                        echo "Building solution..."
-                        ${DOTNET_ROOT}/dotnet build ${SOLUTION_FILE} \
-                            --configuration Release \
-                            --no-restore \
-                            --verbosity normal \
-                            /p:Version=${VERSION}
-
-                        # Create publish directories
-                        mkdir -p publish/wcf publish/api publish/worker
-
-                        # Publish WCF Service
-                        echo "Publishing WCF Service..."
-                        ${DOTNET_ROOT}/dotnet publish src/Services/WebServices/CreditTransferService/CreditTransfer.Services.WcfService.csproj \
-                            --configuration Release \
-                            --output ./publish/wcf \
-                            /p:Version=${VERSION}
-
-                        # Publish REST API
-                        echo "Publishing REST API..."
-                        ${DOTNET_ROOT}/dotnet publish src/Services/ApiServices/CreditTransferApi/CreditTransfer.Services.RestApi.csproj \
-                            --configuration Release \
-                            --output ./publish/api \
-                            /p:Version=${VERSION}
-
-                        # Publish Worker Service
-                        echo "Publishing Worker Service..."
-                        ${DOTNET_ROOT}/dotnet publish src/Services/WorkerServices/CreditTransferWorker/CreditTransfer.Services.WorkerService.csproj \
-                            --configuration Release \
-                            --output ./publish/worker \
-                            /p:Version=${VERSION}
-
-                        # Verify publish output
-                        echo "Verifying published output..."
-                        ls -la publish/wcf
-                        ls -la publish/api
-                        ls -la publish/worker
-                    '''
-                }
-            }
-            post {
-                success {
-                    archiveArtifacts artifacts: 'Migrated/publish/**/*', fingerprint: true
-                }
-                failure {
-                    script {
-                        notifyBuild('FAILED', 'Build failed')
-                    }
                 }
             }
         }
@@ -377,41 +217,51 @@ pipeline {
     
     post {
         always {
-            script {
-                echo "🧹 Performing cleanup tasks"
-                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+            node('built-in') {
+                script {
+                    echo "🧹 Performing cleanup tasks"
+                    archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                }
             }
         }
         
         success {
-            script {
-                notifyBuild('SUCCESS', 'Pipeline completed successfully')
-                sh '''#!/bin/bash
-                    echo "Pipeline completed successfully at $(date)" > deployment-status.txt
-                '''
-                archiveArtifacts artifacts: 'deployment-status.txt'
+            node('built-in') {
+                script {
+                    notifyBuild('SUCCESS', 'Pipeline completed successfully')
+                    sh '''#!/bin/bash
+                        echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                    '''
+                    archiveArtifacts artifacts: 'deployment-status.txt'
+                }
             }
         }
         
         failure {
-            script {
-                notifyBuild('FAILED', 'Pipeline failed')
-                sh '''#!/bin/bash
-                    echo "Pipeline failed at $(date)" > failure-status.txt
-                '''
-                archiveArtifacts artifacts: 'failure-status.txt'
+            node('built-in') {
+                script {
+                    notifyBuild('FAILED', 'Pipeline failed')
+                    sh '''#!/bin/bash
+                        echo "Pipeline failed at $(date)" > failure-status.txt
+                    '''
+                    archiveArtifacts artifacts: 'failure-status.txt'
+                }
             }
         }
         
         unstable {
-            script {
-                notifyBuild('UNSTABLE', 'Pipeline completed with issues')
+            node('built-in') {
+                script {
+                    notifyBuild('UNSTABLE', 'Pipeline completed with issues')
+                }
             }
         }
         
         aborted {
-            script {
-                notifyBuild('ABORTED', 'Pipeline was aborted')
+            node('built-in') {
+                script {
+                    notifyBuild('ABORTED', 'Pipeline was aborted')
+                }
             }
         }
     }
