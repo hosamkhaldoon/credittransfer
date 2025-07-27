@@ -264,67 +264,22 @@ pipeline {
                         export PATH="${DOTNET_ROOT}:${PATH}"
                         export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
                         
-                        # Verify workspace and solution
-                        echo "Workspace contents:"
-                        ls -la
-                        
-                        echo "Migrated directory contents:"
-                        ls -la Migrated/
-                        
-                        echo "Finding solution files:"
-                        find . -name "*.sln" -type f
-                        
-                        # Use absolute paths
-                        WORKSPACE_PATH="$(pwd)"
-                        SOLUTION_PATH="${WORKSPACE_PATH}/Migrated/CreditTransfer.Modern.sln"
-                        
-                        if [ ! -f "${SOLUTION_PATH}" ]; then
-                            echo "Error: Solution file not found at ${SOLUTION_PATH}"
-                            exit 1
-                        fi
-                        
                         cd Migrated
                         
-                        # Build tests first
-                        echo "Building tests..."
-                        ${DOTNET_ROOT}/dotnet build "${SOLUTION_PATH}" \
-                            --configuration Release \
-                            --no-restore \
-                            --verbosity normal \
-                            /p:Version=${VERSION}
-                        
-                        # Run unit tests
-                        echo "Running unit tests..."
-                        mkdir -p "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/unit"
+                        # Run all tests without category filter
+                        echo "Running all tests..."
+                        mkdir -p "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/tests"
                         ${DOTNET_ROOT}/dotnet test "${SOLUTION_PATH}" \
                             --configuration Release \
                             --no-build \
-                            --filter "Category=Unit" \
-                            --logger "trx;LogFileName=unit_tests.trx" \
-                            --results-directory "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/unit" \
+                            --logger "trx;LogFileName=test_results.trx" \
+                            --results-directory "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/tests" \
                             --verbosity normal \
                             --collect:"XPlat Code Coverage"
                         
-                        # Run integration tests if they exist
-                        INTEGRATION_TEST_PROJECT="tests/Integration/CreditTransfer.Integration.Tests/CreditTransfer.Integration.Tests.csproj"
-                        if [ -f "${INTEGRATION_TEST_PROJECT}" ]; then
-                            echo "Running integration tests..."
-                            mkdir -p "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/integration"
-                            ${DOTNET_ROOT}/dotnet test "${INTEGRATION_TEST_PROJECT}" \
-                                --configuration Release \
-                                --no-build \
-                                --filter "Category=Integration" \
-                                --logger "trx;LogFileName=integration_tests.trx" \
-                                --results-directory "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/integration" \
-                                --verbosity normal
-                        else
-                            echo "Integration test project not found at: ${INTEGRATION_TEST_PROJECT}"
-                        fi
-                        
                         # List test results
                         echo "Test results directory contents:"
-                        ls -la "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/unit" || true
-                        ls -la "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/integration" || true
+                        ls -la "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/tests" || true
                     '''
                 }
             }
@@ -335,6 +290,89 @@ pipeline {
                         testResults: '**/test-results/**/*.trx',
                         skipPublishingChecks: true
                     )
+                }
+            }
+        }
+
+        stage('🐳 Build Docker Images') {
+            environment {
+                DOCKER_REGISTRY = 'docker.io'  // Change this to your registry
+                DOCKER_NAMESPACE = 'hosamkhaldoon'  // Change this to your namespace
+                DOCKER_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+            }
+            steps {
+                script {
+                    echo "🐳 Building Docker images"
+                    sh '''#!/bin/bash
+                        cd Migrated
+                        
+                        # Build WCF Service image
+                        echo "Building WCF Service image..."
+                        docker build \
+                            -f src/Services/WebServices/CreditTransferService/Dockerfile \
+                            -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG} \
+                            -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest \
+                            .
+                        
+                        # Build REST API image
+                        echo "Building REST API image..."
+                        docker build \
+                            -f src/Services/ApiServices/CreditTransferApi/Dockerfile \
+                            -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG} \
+                            -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest \
+                            .
+                        
+                        # Build Worker Service image
+                        echo "Building Worker Service image..."
+                        docker build \
+                            -f src/Services/WorkerServices/CreditTransferWorker/Dockerfile \
+                            -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG} \
+                            -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest \
+                            .
+                    '''
+                }
+            }
+        }
+
+        stage('📦 Push Docker Images') {
+            environment {
+                DOCKER_CREDENTIALS = credentials('docker-hub-credentials')  // Add these credentials in Jenkins
+            }
+            steps {
+                script {
+                    echo "📦 Pushing Docker images to registry"
+                    sh '''#!/bin/bash
+                        # Login to Docker registry
+                        echo "${DOCKER_CREDENTIALS_PSW}" | docker login ${DOCKER_REGISTRY} -u "${DOCKER_CREDENTIALS_USR}" --password-stdin
+                        
+                        # Push WCF Service images
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest
+                        
+                        # Push REST API images
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest
+                        
+                        # Push Worker Service images
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest
+                        
+                        # Logout from Docker registry
+                        docker logout ${DOCKER_REGISTRY}
+                    '''
+                }
+            }
+            post {
+                always {
+                    sh '''#!/bin/bash
+                        # Clean up local images to save space
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest || true
+                    '''
                 }
             }
         }
