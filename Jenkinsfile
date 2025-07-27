@@ -49,51 +49,51 @@ pipeline {
             steps {
                 script {
                     echo "🛠️ Setting up build environment"
-                    
-                    // Create directories
                     sh '''#!/bin/bash
                         mkdir -p ${DOTNET_ROOT}
                         mkdir -p ${TEST_RESULTS_DIR}
                         mkdir -p ${COVERAGE_DIR}
                         mkdir -p ${SECURITY_SCAN_DIR}
-                    '''
-                    
-                    // Install .NET SDK
-                    sh '''#!/bin/bash
+                        
                         # Download and install .NET SDK
                         if [ ! -f ${DOTNET_ROOT}/dotnet ]; then
                             echo "Installing .NET SDK ${DOTNET_VERSION}..."
-                            
-                            # Download the script directly from Microsoft
                             curl -SL --retry 3 --retry-delay 5 https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -o dotnet-install.sh
-                            
-                            # Verify the download
                             if [ ! -f dotnet-install.sh ]; then
                                 echo "Failed to download dotnet-install.sh"
                                 exit 1
                             fi
-                            
-                            # Make it executable and run
                             chmod +x ./dotnet-install.sh
                             ./dotnet-install.sh --version ${DOTNET_VERSION} --install-dir ${DOTNET_ROOT} --verbose
                             rm dotnet-install.sh
+                        fi
+
+                        # Install Docker if not present
+                        if ! command -v docker &> /dev/null; then
+                            echo "Installing Docker..."
+                            curl -fsSL https://get.docker.com -o get-docker.sh
+                            chmod +x get-docker.sh
+                            sh get-docker.sh
+                            rm get-docker.sh
                             
-                            # Add to PATH
-                            export PATH="${DOTNET_ROOT}:${PATH}"
-                            export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+                            # Add jenkins user to docker group
+                            sudo usermod -aG docker jenkins
+                            # Restart Docker daemon
+                            sudo service docker start || true
                         fi
-                        
-                        # Verify .NET installation
-                        if [ -f ${DOTNET_ROOT}/dotnet ]; then
-                            echo ".NET SDK installed successfully"
-                            DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${DOTNET_ROOT}/dotnet --info || {
-                                echo "Failed to run dotnet --info. Error code: $?"
-                                exit 1
-                            }
-                        else
-                            echo ".NET SDK installation failed"
+
+                        # Verify installations
+                        echo ".NET SDK version:"
+                        DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${DOTNET_ROOT}/dotnet --info || {
+                            echo "Failed to run dotnet --info. Error code: $?"
                             exit 1
-                        fi
+                        }
+                        
+                        echo "Docker version:"
+                        docker --version || {
+                            echo "Failed to run docker --version. Error code: $?"
+                            exit 1
+                        }
                     '''
                 }
             }
@@ -266,20 +266,24 @@ pipeline {
                         
                         cd Migrated
                         
-                        # Run all tests without category filter
+                        # Ensure test results directory exists and has correct permissions
+                        TEST_RESULTS_PATH="${WORKSPACE}/${TEST_RESULTS_DIR}/tests"
+                        mkdir -p "${TEST_RESULTS_PATH}"
+                        chmod -R 777 "${TEST_RESULTS_PATH}"
+                        
+                        # Run all tests
                         echo "Running all tests..."
-                        mkdir -p "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/tests"
                         ${DOTNET_ROOT}/dotnet test "${SOLUTION_PATH}" \
                             --configuration Release \
                             --no-build \
                             --logger "trx;LogFileName=test_results.trx" \
-                            --results-directory "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/tests" \
+                            --results-directory "${TEST_RESULTS_PATH}" \
                             --verbosity normal \
                             --collect:"XPlat Code Coverage"
                         
                         # List test results
                         echo "Test results directory contents:"
-                        ls -la "${WORKSPACE_PATH}/${TEST_RESULTS_DIR}/tests" || true
+                        ls -la "${TEST_RESULTS_PATH}" || true
                     '''
                 }
             }
@@ -304,11 +308,14 @@ pipeline {
                 script {
                     echo "🐳 Building Docker images"
                     sh '''#!/bin/bash
+                        # Ensure Docker daemon is running
+                        sudo service docker start || true
+                        
                         cd Migrated
                         
                         # Build WCF Service image
                         echo "Building WCF Service image..."
-                        docker build \
+                        sudo docker build \
                             -f src/Services/WebServices/CreditTransferService/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest \
@@ -316,7 +323,7 @@ pipeline {
                         
                         # Build REST API image
                         echo "Building REST API image..."
-                        docker build \
+                        sudo docker build \
                             -f src/Services/ApiServices/CreditTransferApi/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest \
@@ -324,7 +331,7 @@ pipeline {
                         
                         # Build Worker Service image
                         echo "Building Worker Service image..."
-                        docker build \
+                        sudo docker build \
                             -f src/Services/WorkerServices/CreditTransferWorker/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest \
