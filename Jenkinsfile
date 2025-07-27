@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'docker:dind'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
     
     environment {
         // Project Configuration
@@ -33,6 +38,11 @@ pipeline {
         DOTNET_ROOT = "${WORKSPACE}/.dotnet"
         PATH = "${DOTNET_ROOT}:${PATH}"
         DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = '1'  // Allow running without ICU
+
+        // Docker Configuration
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_NAMESPACE = 'hosamkhaldoon'
+        DOCKER_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
     }
     
     options {
@@ -50,12 +60,11 @@ pipeline {
                 script {
                     echo "🛠️ Setting up build environment"
                     sh '''#!/bin/bash
-                        mkdir -p ${DOTNET_ROOT}
-                        mkdir -p ${TEST_RESULTS_DIR}
-                        mkdir -p ${COVERAGE_DIR}
-                        mkdir -p ${SECURITY_SCAN_DIR}
+                        # Create directories with proper permissions
+                        mkdir -p ${DOTNET_ROOT} ${TEST_RESULTS_DIR} ${COVERAGE_DIR} ${SECURITY_SCAN_DIR}
+                        chmod -R 777 ${TEST_RESULTS_DIR} ${COVERAGE_DIR} ${SECURITY_SCAN_DIR}
                         
-                        # Download and install .NET SDK
+                        # Install .NET SDK
                         if [ ! -f ${DOTNET_ROOT}/dotnet ]; then
                             echo "Installing .NET SDK ${DOTNET_VERSION}..."
                             curl -SL --retry 3 --retry-delay 5 https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -o dotnet-install.sh
@@ -68,19 +77,8 @@ pipeline {
                             rm dotnet-install.sh
                         fi
 
-                        # Install Docker if not present
-                        if ! command -v docker &> /dev/null; then
-                            echo "Installing Docker..."
-                            curl -fsSL https://get.docker.com -o get-docker.sh
-                            chmod +x get-docker.sh
-                            sh get-docker.sh
-                            rm get-docker.sh
-                            
-                            # Add jenkins user to docker group
-                            sudo usermod -aG docker jenkins
-                            # Restart Docker daemon
-                            sudo service docker start || true
-                        fi
+                        # Install required packages
+                        apk add --no-cache bash curl git
 
                         # Verify installations
                         echo ".NET SDK version:"
@@ -254,7 +252,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('🧪 Run Tests') {
             steps {
                 script {
@@ -273,7 +271,7 @@ pipeline {
                         
                         # Run all tests
                         echo "Running all tests..."
-                        ${DOTNET_ROOT}/dotnet test "${SOLUTION_PATH}" \
+                        ${DOTNET_ROOT}/dotnet test "${SOLUTION_FILE}" \
                             --configuration Release \
                             --no-build \
                             --logger "trx;LogFileName=test_results.trx" \
@@ -299,23 +297,15 @@ pipeline {
         }
 
         stage('🐳 Build Docker Images') {
-            environment {
-                DOCKER_REGISTRY = 'docker.io'  // Change this to your registry
-                DOCKER_NAMESPACE = 'hosamkhaldoon'  // Change this to your namespace
-                DOCKER_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
-            }
             steps {
                 script {
                     echo "🐳 Building Docker images"
                     sh '''#!/bin/bash
-                        # Ensure Docker daemon is running
-                        sudo service docker start || true
-                        
                         cd Migrated
                         
                         # Build WCF Service image
                         echo "Building WCF Service image..."
-                        sudo docker build \
+                        docker build \
                             -f src/Services/WebServices/CreditTransferService/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest \
@@ -323,7 +313,7 @@ pipeline {
                         
                         # Build REST API image
                         echo "Building REST API image..."
-                        sudo docker build \
+                        docker build \
                             -f src/Services/ApiServices/CreditTransferApi/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest \
@@ -331,7 +321,7 @@ pipeline {
                         
                         # Build Worker Service image
                         echo "Building Worker Service image..."
-                        sudo docker build \
+                        docker build \
                             -f src/Services/WorkerServices/CreditTransferWorker/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest \
@@ -343,7 +333,7 @@ pipeline {
 
         stage('📦 Push Docker Images') {
             environment {
-                DOCKER_CREDENTIALS = credentials('docker-hub-credentials')  // Add these credentials in Jenkins
+                DOCKER_CREDENTIALS = credentials('docker-hub-credentials')
             }
             steps {
                 script {
