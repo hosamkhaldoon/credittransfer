@@ -1,5 +1,14 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'jenkins/agent:latest-jdk11'
+            args '''
+                -v /var/run/docker.sock:/var/run/docker.sock
+                -v ${WORKSPACE}:${WORKSPACE}
+                --group-add $(getent group docker | cut -d: -f3)
+            '''
+        }
+    }
     
     environment {
         // Project Configuration
@@ -72,64 +81,16 @@ pipeline {
                             rm dotnet-install.sh
                         fi
 
-                        # Install Docker if not present
-                        if ! command -v docker &> /dev/null; then
-                            echo "Installing Docker..."
-                            # Install prerequisites
-                            echo "Installing prerequisites..."
-                            sudo apt-get update
-                            sudo apt-get install -y \
-                                apt-transport-https \
-                                ca-certificates \
-                                curl \
-                                gnupg \
-                                lsb-release
-
-                            # Add Docker's official GPG key
-                            echo "Adding Docker GPG key..."
-                            sudo mkdir -p /etc/apt/keyrings
-                            curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-
-                            # Set up the repository
-                            echo "Setting up Docker repository..."
-                            echo \
-                                "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-                                $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-                            # Install Docker Engine
-                            echo "Installing Docker Engine..."
-                            sudo apt-get update
-                            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-                            # Add jenkins user to docker group
-                            echo "Adding jenkins user to docker group..."
-                            sudo usermod -aG docker jenkins
-                            
-                            # Reload groups
-                            echo "Reloading groups..."
-                            newgrp docker || true
-
-                            # Start Docker daemon
-                            echo "Starting Docker daemon..."
-                            sudo service docker start || true
-                            
-                            # Wait for Docker to be available
-                            echo "Waiting for Docker to be available..."
-                            timeout 60 sh -c 'until sudo docker info >/dev/null 2>&1; do echo "Waiting for Docker to start..."; sleep 1; done'
-                        else
-                            echo "Docker is already installed"
-                        fi
-
-                        # Verify Docker installation
-                        echo "Verifying Docker installation..."
-                        sudo docker --version || {
-                            echo "Failed to run docker --version. Error code: $?"
+                        # Verify Docker access
+                        echo "Verifying Docker access..."
+                        docker version || {
+                            echo "Failed to access Docker. Error code: $?"
                             exit 1
                         }
-                        
+
                         # Test Docker functionality
                         echo "Testing Docker functionality..."
-                        sudo docker run --rm hello-world || {
+                        docker run --rm hello-world || {
                             echo "Failed to run Docker test container. Error code: $?"
                             exit 1
                         }
@@ -197,7 +158,7 @@ pipeline {
                         
                         # Build WCF Service image
                         echo "Building WCF Service image..."
-                        sudo docker build \
+                        docker build \
                             -f src/Services/WebServices/CreditTransferService/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest \
@@ -205,7 +166,7 @@ pipeline {
                         
                         # Build REST API image
                         echo "Building REST API image..."
-                        sudo docker build \
+                        docker build \
                             -f src/Services/ApiServices/CreditTransferApi/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest \
@@ -213,7 +174,7 @@ pipeline {
                         
                         # Build Worker Service image
                         echo "Building Worker Service image..."
-                        sudo docker build \
+                        docker build \
                             -f src/Services/WorkerServices/CreditTransferWorker/Dockerfile \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG} \
                             -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest \
@@ -232,22 +193,22 @@ pipeline {
                     echo "📦 Pushing Docker images to registry"
                     sh '''#!/bin/bash
                         # Login to Docker registry
-                        echo "${DOCKER_CREDENTIALS_PSW}" | sudo docker login ${DOCKER_REGISTRY} -u "${DOCKER_CREDENTIALS_USR}" --password-stdin
+                        echo "${DOCKER_CREDENTIALS_PSW}" | docker login ${DOCKER_REGISTRY} -u "${DOCKER_CREDENTIALS_USR}" --password-stdin
                         
                         # Push WCF Service images
-                        sudo docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG}
-                        sudo docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest
                         
                         # Push REST API images
-                        sudo docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG}
-                        sudo docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest
                         
                         # Push Worker Service images
-                        sudo docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG}
-                        sudo docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest
                         
                         # Logout from Docker registry
-                        sudo docker logout ${DOCKER_REGISTRY}
+                        docker logout ${DOCKER_REGISTRY}
                     '''
                 }
             }
@@ -255,12 +216,12 @@ pipeline {
                 always {
                     sh '''#!/bin/bash
                         # Clean up local images to save space
-                        sudo docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG} || true
-                        sudo docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest || true
-                        sudo docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG} || true
-                        sudo docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest || true
-                        sudo docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG} || true
-                        sudo docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-wcf:latest || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-api:latest || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:${DOCKER_TAG} || true
+                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/credit-transfer-worker:latest || true
                     '''
                 }
             }
