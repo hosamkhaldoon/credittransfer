@@ -301,11 +301,25 @@ pipeline {
         }
 
         stage('📦 Push Docker Images') {
-            when {
-                // Only push if we're on main branch
-                branch 'main'
-            }
             steps {
+                script {
+                    // Debug: Show branch information
+                    echo "🔍 DEBUG: Branch Name = ${env.BRANCH_NAME}"
+                    echo "🔍 DEBUG: Git Branch = ${env.GIT_BRANCH}"
+                    echo "🔍 DEBUG: Git Commit = ${env.GIT_COMMIT}"
+                    
+                    // Check if we should push (main branch or manual override)
+                    def shouldPush = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH?.contains('main') || env.BRANCH_NAME == 'origin/main')
+                    
+                    if (!shouldPush) {
+                        echo "⚠️ Skipping Docker push - not on main branch"
+                        echo "📋 Current branch: ${env.BRANCH_NAME}"
+                        echo "📋 To force push, set environment variable FORCE_DOCKER_PUSH=true"
+                        return
+                    }
+                    
+                    echo "🚀 Proceeding with Docker push on branch: ${env.BRANCH_NAME}"
+                }
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', 
                                                 usernameVariable: 'DOCKER_USERNAME', 
                                                 passwordVariable: 'DOCKER_PASSWORD')]) {
