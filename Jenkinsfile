@@ -458,10 +458,13 @@ pipeline {
         success {
             script {
                 try {
-                    notifyBuild('SUCCESS', 'Pipeline completed successfully')
+                    notifySlack('SUCCESS', 'Pipeline completed successfully! 🎉')
+                    echo "✅ Pipeline completed successfully! Slack notification sent."
+                    
                     if (env.WORKSPACE) {
                         sh '''#!/bin/bash
                             echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                            echo "Docker images pushed to: https://hub.docker.com/u/dockerhosam" >> deployment-status.txt
                         '''
                         archiveArtifacts artifacts: 'deployment-status.txt', allowEmptyArchive: true
                     }
@@ -474,10 +477,13 @@ pipeline {
         failure {
             script {
                 try {
-                    notifyBuild('FAILED', 'Pipeline failed')
+                    notifySlack('FAILURE', 'Pipeline failed! ❌')
+                    echo "❌ Pipeline failed! Slack notification sent."
+                    
                     if (env.WORKSPACE) {
                         sh '''#!/bin/bash
                             echo "Pipeline failed at $(date)" > failure-status.txt
+                            echo "Check build logs for details" >> failure-status.txt
                         '''
                         archiveArtifacts artifacts: 'failure-status.txt', allowEmptyArchive: true
                     }
@@ -490,7 +496,8 @@ pipeline {
         unstable {
             script {
                 try {
-                    notifyBuild('UNSTABLE', 'Pipeline completed with issues')
+                    notifySlack('UNSTABLE', 'Pipeline completed with issues! ⚠️')
+                    echo "⚠️ Pipeline unstable! Slack notification sent."
                 } catch (Exception e) {
                     echo "⚠️ Unstable notification failed: ${e.getMessage()}"
                 }
@@ -500,7 +507,8 @@ pipeline {
         aborted {
             script {
                 try {
-                    notifyBuild('ABORTED', 'Pipeline was aborted')
+                    notifySlack('ABORTED', 'Pipeline was aborted! 🛑')
+                    echo "🛑 Pipeline aborted! Slack notification sent."
                 } catch (Exception e) {
                     echo "⚠️ Aborted notification failed: ${e.getMessage()}"
                 }
@@ -509,56 +517,96 @@ pipeline {
     }
 }
 
-def notifyBuild(String buildStatus, String message) {
-    def colorCode = buildStatus == 'SUCCESS' ? 'good' : 
-                   buildStatus == 'UNSTABLE' ? 'warning' : 'danger'
+def notifySlack(String buildStatus, String message) {
+    // Color coding for different build statuses
+    def color = 'good' // Default green for success
+    def emoji = '✅'
     
-    def subject = "${buildStatus}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'"
-    def summary = "${subject} - ${message}"
-    def details = """
-        *Project*: ${env.JOB_NAME}
-        *Build Number*: ${env.BUILD_NUMBER}
-        *Status*: ${buildStatus}
-        *Message*: ${message}
-        *Branch*: ${env.BRANCH_NAME}
-        *Version*: ${env.VERSION}
-        *Build URL*: ${env.BUILD_URL}
-    """
+    if (buildStatus == 'FAILURE') {
+        color = 'danger'
+        emoji = '❌'
+    } else if (buildStatus == 'UNSTABLE') {
+        color = 'warning' 
+        emoji = '⚠️'
+    } else if (buildStatus == 'ABORTED') {
+        color = '#808080' // Gray
+        emoji = '🛑'
+    } else if (buildStatus == 'SUCCESS') {
+        color = 'good'
+        emoji = '✅'
+    }
     
-    // Email notification (primary notification method)
+    // Create rich Slack message
+    def slackMessage = [
+        text: "${emoji} Jenkins Build ${buildStatus}",
+        attachments: [[
+            color: color,
+            title: "${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+            title_link: "${env.BUILD_URL}",
+            fields: [
+                [title: "Project", value: env.JOB_NAME, short: true],
+                [title: "Build", value: "#${env.BUILD_NUMBER}", short: true],
+                [title: "Status", value: buildStatus, short: true],
+                [title: "Branch", value: "${env.BRANCH_NAME ?: 'main'}", short: true],
+                [title: "Duration", value: "${currentBuild.durationString}", short: true],
+                [title: "Started By", value: "${currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause')[0]?.userId ?: 'Timer/SCM'}", short: true]
+            ],
+            footer: "Jenkins CI/CD",
+            footer_icon: "https://jenkins.io/images/logos/jenkins/jenkins.png",
+            ts: System.currentTimeMillis() / 1000
+        ]]
+    ]
+    
+    // Add extra context for failures
+    if (buildStatus == 'FAILURE') {
+        slackMessage.attachments[0].fields << [
+            title: "Build URL", 
+            value: "<${env.BUILD_URL}console|View Console Output>", 
+            short: false
+        ]
+    }
+    
+    // Add Docker Hub links for successful builds
+    if (buildStatus == 'SUCCESS') {
+        slackMessage.attachments[0].fields << [
+            title: "Docker Images", 
+            value: "<https://hub.docker.com/u/dockerhosam|View on Docker Hub>", 
+            short: false
+        ]
+    }
+    
     try {
-        // Check if email is configured
-        if (env.EMAIL_RECIPIENTS && env.EMAIL_RECIPIENTS.trim()) {
-            emailext(
-                subject: subject,
-                body: details,
-                to: env.EMAIL_RECIPIENTS,
-                mimeType: 'text/plain',
-                replyTo: '$DEFAULT_REPLYTO',
-                recipientProviders: [
-                    [$class: 'CulpritsRecipientProvider'],
-                    [$class: 'DevelopersRecipientProvider'],
-                    [$class: 'RequesterRecipientProvider']
-                ]
+        // Send to Slack using HTTP Request
+        withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_WEBHOOK_URL')]) {
+            def response = httpRequest(
+                httpMode: 'POST',
+                url: "${SLACK_WEBHOOK_URL}",
+                contentType: 'APPLICATION_JSON',
+                requestBody: groovy.json.JsonOutput.toJson(slackMessage),
+                validResponseCodes: '200'
             )
-            echo "✅ Email notification sent successfully"
-        } else {
-            echo "⚠️ No email recipients configured, skipping email notification"
+            echo "✅ Slack notification sent successfully (${response.status})"
         }
     } catch (Exception e) {
-        echo "⚠️ Email notification failed: ${e.getMessage()}"
-        echo "📋 Configure SMTP settings in Jenkins System Configuration"
+        echo "⚠️ Failed to send Slack notification: ${e.getMessage()}"
+        echo "💡 Make sure 'slack-webhook' credential is configured and HTTP Request plugin is installed"
         
-        // Fallback: Write notification to file
+        // Fallback: Create a simple notification file
         try {
-            writeFile file: 'build-notification.txt', text: """
-BUILD NOTIFICATION
-${summary}
-${details}
-Time: ${new Date()}
+            def simpleNotification = """
+=== JENKINS BUILD NOTIFICATION ===
+${emoji} Status: ${buildStatus}
+📋 Project: ${env.JOB_NAME}
+🔢 Build: #${env.BUILD_NUMBER}
+🔗 URL: ${env.BUILD_URL}
+🌿 Branch: ${env.BRANCH_NAME ?: 'main'}
+⏱️ Duration: ${currentBuild.durationString}
+📅 Time: ${new Date()}
+================================
 """
-            archiveArtifacts artifacts: 'build-notification.txt', allowEmptyArchive: true
-            echo "📝 Build notification saved to artifacts"
+            writeFile file: "slack-notification-${env.BUILD_NUMBER}.txt", text: simpleNotification
+            archiveArtifacts artifacts: "slack-notification-${env.BUILD_NUMBER}.txt", allowEmptyArchive: true
+            echo "📝 Notification saved to artifacts as fallback"
         } catch (Exception fe) {
             echo "⚠️ Fallback notification also failed: ${fe.getMessage()}"
         }
