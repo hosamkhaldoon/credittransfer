@@ -33,6 +33,7 @@ pipeline {
         DOCKER_REGISTRY = ''  // Empty for Docker Hub, or 'your-registry.azurecr.io' for Azure, etc.
         DOCKER_NAMESPACE = 'dockerhosam'  // Replace with your Docker Hub username or organization
         DOCKER_TAG = "${env.BUILD_NUMBER}"
+        FORCE_DOCKER_PUSH = 'true'  // Force push regardless of branch (set to 'false' to disable)
         
         // Notification
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
@@ -307,18 +308,23 @@ pipeline {
                     echo "🔍 DEBUG: Branch Name = ${env.BRANCH_NAME}"
                     echo "🔍 DEBUG: Git Branch = ${env.GIT_BRANCH}"
                     echo "🔍 DEBUG: Git Commit = ${env.GIT_COMMIT}"
+                    echo "🔍 DEBUG: Force Push = ${env.FORCE_DOCKER_PUSH}"
                     
-                    // Check if we should push (main branch or manual override)
-                    def shouldPush = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH?.contains('main') || env.BRANCH_NAME == 'origin/main')
+                    // Check if we should push (main branch, manual override, or force push)
+                    def shouldPush = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH?.contains('main') || env.BRANCH_NAME == 'origin/main' || env.FORCE_DOCKER_PUSH == 'true')
                     
                     if (!shouldPush) {
-                        echo "⚠️ Skipping Docker push - not on main branch"
+                        echo "⚠️ Skipping Docker push - conditions not met"
                         echo "📋 Current branch: ${env.BRANCH_NAME}"
-                        echo "📋 To force push, set environment variable FORCE_DOCKER_PUSH=true"
+                        echo "📋 To force push, set FORCE_DOCKER_PUSH=true in environment"
                         return
                     }
                     
-                    echo "🚀 Proceeding with Docker push on branch: ${env.BRANCH_NAME}"
+                    if (env.FORCE_DOCKER_PUSH == 'true') {
+                        echo "🚀 Force pushing Docker images (FORCE_DOCKER_PUSH=true)"
+                    } else {
+                        echo "🚀 Proceeding with Docker push on branch: ${env.BRANCH_NAME}"
+                    }
                 }
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', 
                                                 usernameVariable: 'DOCKER_USERNAME', 
@@ -340,50 +346,73 @@ pipeline {
                                 exit 0
                             fi
                             
-                            # Login to Docker registry
-                            echo "Logging in to Docker registry..."
-                            if [ -n "${DOCKER_REGISTRY}" ]; then
-                                echo "$DOCKER_PASSWORD" | docker login ${DOCKER_REGISTRY} -u "$DOCKER_USERNAME" --password-stdin || {
-                                    echo "❌ Failed to login to Docker registry: ${DOCKER_REGISTRY}"
-                                    exit 1
-                                }
-                            else
-                                echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin || {
-                                    echo "❌ Failed to login to Docker Hub"
-                                    exit 1
-                                }
+                            # Login to Docker registry with proper error handling
+                            echo "🔑 Logging in to Docker registry..."
+                            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                            
+                            if [ $? -ne 0 ]; then
+                                echo "❌ Failed to login to Docker Hub"
+                                echo "🔍 Debug: Username = $DOCKER_USERNAME"
+                                echo "🔍 Debug: Registry = ${DOCKER_REGISTRY:-docker.io}"
+                                exit 1
                             fi
                             
-                            # Push WCF Service image
+                            echo "✅ Docker login successful"
+                            
+                            # Function to push with retry logic
+                            push_with_retry() {
+                                local image_name=$1
+                                local max_attempts=3
+                                local attempt=1
+                                
+                                while [ $attempt -le $max_attempts ]; do
+                                    echo "📤 Pushing $image_name (attempt $attempt/$max_attempts)"
+                                    
+                                    if docker push "$image_name"; then
+                                        echo "✅ Successfully pushed $image_name"
+                                        return 0
+                                    else
+                                        echo "⚠️ Push failed for $image_name (attempt $attempt/$max_attempts)"
+                                        if [ $attempt -lt $max_attempts ]; then
+                                            echo "🔄 Retrying in 10 seconds..."
+                                            sleep 10
+                                        fi
+                                    fi
+                                    
+                                    attempt=$((attempt + 1))
+                                done
+                                
+                                echo "❌ Failed to push $image_name after $max_attempts attempts"
+                                return 1
+                            }
+                            
+                            # Push WCF Service image with retry
                             if docker images | grep -q "${DOCKER_NAMESPACE}/wcf-service"; then
-                                echo "Pushing WCF Service image..."
-                                docker push ${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/wcf-service:${DOCKER_TAG}
-                                docker push ${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/wcf-service:latest
-                                echo "✅ WCF Service image pushed successfully"
+                                echo "📦 Pushing WCF Service image..."
+                                if push_with_retry "${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/wcf-service:${DOCKER_TAG}"; then
+                                    push_with_retry "${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/wcf-service:latest"
+                                fi
                             fi
                             
-                            # Push REST API image
+                            # Push REST API image with retry
                             if docker images | grep -q "${DOCKER_NAMESPACE}/rest-api"; then
-                                echo "Pushing REST API image..."
-                                docker push ${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/rest-api:${DOCKER_TAG}
-                                docker push ${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/rest-api:latest
-                                echo "✅ REST API image pushed successfully"
+                                echo "📦 Pushing REST API image..."
+                                if push_with_retry "${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/rest-api:${DOCKER_TAG}"; then
+                                    push_with_retry "${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/rest-api:latest"
+                                fi
                             fi
                             
-                            # Push Worker Service image
+                            # Push Worker Service image with retry
                             if docker images | grep -q "${DOCKER_NAMESPACE}/worker-service"; then
-                                echo "Pushing Worker Service image..."
-                                docker push ${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/worker-service:${DOCKER_TAG}
-                                docker push ${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/worker-service:latest
-                                echo "✅ Worker Service image pushed successfully"
+                                echo "📦 Pushing Worker Service image..."
+                                if push_with_retry "${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/worker-service:${DOCKER_TAG}"; then
+                                    push_with_retry "${DOCKER_REGISTRY}${DOCKER_REGISTRY:+/}${DOCKER_NAMESPACE}/worker-service:latest"
+                                fi
                             fi
                             
                             # Logout from registry
-                            if [ -n "${DOCKER_REGISTRY}" ]; then
-                                docker logout ${DOCKER_REGISTRY}
-                            else
-                                docker logout
-                            fi
+                            echo "🔒 Logging out from Docker registry..."
+                            docker logout
                             
                             echo "✅ Docker image push process completed"
                         '''
