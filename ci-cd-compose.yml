@@ -2,15 +2,8 @@ version: '3.8'
 
 # Jenkins and SonarQube CI/CD Infrastructure
 services:
-  jenkins:
-    image: jenkins/jenkins:lts
-    container_name: jenkins
-    ports:
-      - "8080:8080"
-      - "50000:50000"
-    volumes:
-      - jenkins_home:/var/jenkins_home
-    restart: unless-stopped
+  
+
   sonarqube:
     image: sonarqube:8.9-community
     container_name: sonarqube-credittransfer
@@ -21,11 +14,14 @@ services:
       - SONAR_JDBC_USERNAME=sonar
       - SONAR_JDBC_PASSWORD=sonar_password_2024
       - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+      
     volumes:
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_logs:/opt/sonarqube/logs
       - sonarqube_extensions:/opt/sonarqube/extensions
       - sonarqube_conf:/opt/sonarqube/conf
+   
+      
     depends_on:
       - postgres-sonar
     restart: unless-stopped

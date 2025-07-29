@@ -12,7 +12,7 @@ COPY ["CreditTransfer.Modern.sln", "."]
 COPY ["src/Services/WorkerServices/CreditTransferWorker/CreditTransfer.Services.WorkerService.csproj", "src/Services/WorkerServices/CreditTransferWorker/"]
 COPY ["src/Core/Domain/CreditTransfer.Core.Domain.csproj", "src/Core/Domain/"]
 COPY ["src/Core/Application/CreditTransfer.Core.Application.csproj", "src/Core/Application/"]
-COPY ["src/Core/Infrastructure/CreditTransfer.Core.Infrastructure.csproj", "src/Core/Infrastructure/"]
+COPY ["src/Infrastructure/CreditTransfer.Infrastructure.csproj", "src/Infrastructure/"]
 COPY ["src/Core/Authentication/CreditTransfer.Core.Authentication.csproj", "src/Core/Authentication/"]
 
 # Restore dependencies
