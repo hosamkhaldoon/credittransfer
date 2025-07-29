@@ -302,11 +302,8 @@ pipeline {
 
         stage('📦 Push Docker Images') {
             when {
-                // Only push if we're on main branch and have credentials
-                allOf {
-                    branch 'main'
-                    expression { return env.DOCKER_HUB_CREDENTIALS != null }
-                }
+                // Only push if we're on main branch
+                branch 'main'
             }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', 
