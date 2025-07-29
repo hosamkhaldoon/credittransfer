@@ -1,5 +1,19 @@
 pipeline {
-    agent any
+    // Option 1: Use any available agent (current setup)
+    //agent any
+    
+    // Option 2: Use Docker-enabled agent (uncomment to use)
+    // agent {
+    //     label 'docker-enabled'
+    // }
+    
+    // Option 3: Use Docker-in-Docker (uncomment to use)  
+     agent {
+         docker {
+             image 'docker:latest'
+            args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
+       }
+     }
     
     environment {
         // Project Configuration
@@ -60,18 +74,18 @@ pipeline {
                             ./dotnet-install.sh --version ${DOTNET_VERSION} --install-dir ${DOTNET_ROOT} --verbose
                             rm dotnet-install.sh
                         fi
-
+                        
                         # Verify .NET installation
                         echo ".NET SDK version:"
-                        DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${DOTNET_ROOT}/dotnet --info || {
-                            echo "Failed to run dotnet --info. Error code: $?"
-                            exit 1
-                        }
+                            DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${DOTNET_ROOT}/dotnet --info || {
+                                echo "Failed to run dotnet --info. Error code: $?"
+                                exit 1
+                            }
                     '''
                 }
             }
         }
-
+        
         stage('📦 Restore Dependencies') {
             steps {
                 script {
@@ -98,7 +112,7 @@ pipeline {
                 }
             }
         }
-
+        
         stage('🏗️ Build Solution') {
             steps {
                 script {
@@ -213,7 +227,7 @@ pipeline {
                 }
             }
         }
-
+        
         stage('🐳 Build Docker Images') {
             steps {
                 script {
@@ -444,13 +458,40 @@ def notifyBuild(String buildStatus, String message) {
     
     // Email notification (primary notification method)
     try {
-        emailext(
-            subject: subject,
-            body: details,
-            to: env.EMAIL_RECIPIENTS,
-            mimeType: 'text/plain'
-        )
+        // Check if email is configured
+        if (env.EMAIL_RECIPIENTS && env.EMAIL_RECIPIENTS.trim()) {
+            emailext(
+                subject: subject,
+                body: details,
+                to: env.EMAIL_RECIPIENTS,
+                mimeType: 'text/plain',
+                replyTo: '$DEFAULT_REPLYTO',
+                recipientProviders: [
+                    [$class: 'CulpritsRecipientProvider'],
+                    [$class: 'DevelopersRecipientProvider'],
+                    [$class: 'RequesterRecipientProvider']
+                ]
+            )
+            echo "✅ Email notification sent successfully"
+        } else {
+            echo "⚠️ No email recipients configured, skipping email notification"
+        }
     } catch (Exception e) {
-        echo "Email notification failed: ${e.getMessage()}"
+        echo "⚠️ Email notification failed: ${e.getMessage()}"
+        echo "📋 Configure SMTP settings in Jenkins System Configuration"
+        
+        // Fallback: Write notification to file
+        try {
+            writeFile file: 'build-notification.txt', text: """
+BUILD NOTIFICATION
+${summary}
+${details}
+Time: ${new Date()}
+"""
+            archiveArtifacts artifacts: 'build-notification.txt', allowEmptyArchive: true
+            echo "📝 Build notification saved to artifacts"
+        } catch (Exception fe) {
+            echo "⚠️ Fallback notification also failed: ${fe.getMessage()}"
+        }
     }
 } 
