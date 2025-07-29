@@ -1,19 +1,19 @@
 pipeline {
     // Option 1: Use any available agent (current setup)
-    //agent any
+    agent any
     
     // Option 2: Use Docker-enabled agent (uncomment to use)
     // agent {
     //     label 'docker-enabled'
     // }
     
-    // Option 3: Use Docker-in-Docker (uncomment to use)  
-     agent {
-         docker {
-             image 'docker:latest'
-            args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
-       }
-     }
+    // Option 3: Use Docker-in-Docker (requires Docker on host - uncomment to use)  
+    // agent {
+    //     docker {
+    //         image 'docker:latest'
+    //         args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
+    //     }
+    // }
     
     environment {
         // Project Configuration
@@ -401,40 +401,69 @@ pipeline {
     post {
         always {
             script {
-                echo "🧹 Performing cleanup tasks"
-                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                try {
+                    echo "🧹 Performing cleanup tasks"
+                    // Only archive if we have a workspace context
+                    if (env.WORKSPACE) {
+                        archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                    } else {
+                        echo "⚠️ No workspace context available, skipping artifact archival"
+                    }
+                } catch (Exception e) {
+                    echo "⚠️ Cleanup failed: ${e.getMessage()}"
+                }
             }
         }
         
         success {
             script {
-                notifyBuild('SUCCESS', 'Pipeline completed successfully')
-                sh '''#!/bin/bash
-                    echo "Pipeline completed successfully at $(date)" > deployment-status.txt
-                '''
-                archiveArtifacts artifacts: 'deployment-status.txt', allowEmptyArchive: true
+                try {
+                    notifyBuild('SUCCESS', 'Pipeline completed successfully')
+                    if (env.WORKSPACE) {
+                        sh '''#!/bin/bash
+                            echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                        '''
+                        archiveArtifacts artifacts: 'deployment-status.txt', allowEmptyArchive: true
+                    }
+                } catch (Exception e) {
+                    echo "⚠️ Success notification failed: ${e.getMessage()}"
+                }
             }
         }
         
         failure {
             script {
-                notifyBuild('FAILED', 'Pipeline failed')
-                sh '''#!/bin/bash
-                    echo "Pipeline failed at $(date)" > failure-status.txt
-                '''
-                archiveArtifacts artifacts: 'failure-status.txt', allowEmptyArchive: true
+                try {
+                    notifyBuild('FAILED', 'Pipeline failed')
+                    if (env.WORKSPACE) {
+                        sh '''#!/bin/bash
+                            echo "Pipeline failed at $(date)" > failure-status.txt
+                        '''
+                        archiveArtifacts artifacts: 'failure-status.txt', allowEmptyArchive: true
+                    }
+                } catch (Exception e) {
+                    echo "⚠️ Failure notification failed: ${e.getMessage()}"
+                }
             }
         }
         
         unstable {
             script {
-                notifyBuild('UNSTABLE', 'Pipeline completed with issues')
+                try {
+                    notifyBuild('UNSTABLE', 'Pipeline completed with issues')
+                } catch (Exception e) {
+                    echo "⚠️ Unstable notification failed: ${e.getMessage()}"
+                }
             }
         }
         
         aborted {
             script {
-                notifyBuild('ABORTED', 'Pipeline was aborted')
+                try {
+                    notifyBuild('ABORTED', 'Pipeline was aborted')
+                } catch (Exception e) {
+                    echo "⚠️ Aborted notification failed: ${e.getMessage()}"
+                }
             }
         }
     }
