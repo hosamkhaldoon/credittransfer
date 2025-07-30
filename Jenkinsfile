@@ -36,7 +36,7 @@ pipeline {
         FORCE_DOCKER_PUSH = 'true'  // Force push regardless of branch (set to 'false' to disable)
         
         // SonarQube Configuration
-        SONAR_HOST_URL = 'http://localhost:9000'  // SonarQube server URL
+        SONAR_HOST_URL = 'http://host.docker.internal:9000'  // SonarQube server URL (accessible from container)
         // SONAR_TOKEN will be loaded dynamically in the SonarQube stage
         SONAR_PROJECT_KEY = 'credit-transfer-modern'  // SonarQube project key
         SONAR_PROJECT_VERSION = "${VERSION}"  // SonarQube project version
