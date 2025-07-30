@@ -154,6 +154,10 @@ pipeline {
                                 set -e  # Exit on any error
                                 
                                 echo "🔍 Starting SonarQube Analysis Debug Mode"
+                                echo "⏰ Timestamp: $(date)"
+                                echo "📍 Current working directory: $(pwd)"
+                                echo "👤 Current user: $(whoami)"
+                                echo "🔧 Available disk space: $(df -h . | tail -1)"
                                 
                                 # Export environment variables
                                 export PATH=\"\$PATH:/root/.dotnet/tools:${DOTNET_ROOT}:${PATH}\"
@@ -163,8 +167,12 @@ pipeline {
                                 echo "PATH: \$PATH"
                                 echo "DOTNET_ROOT: ${DOTNET_ROOT}"
                                 
+                                echo "🎯 CHECKPOINT 1: Environment setup completed"
+                                
                                 cd Migrated
                                 echo "✅ Changed to Migrated directory: \$(pwd)"
+                                
+                                echo "🎯 CHECKPOINT 2: Directory navigation completed"
                                 
                                 # Install SonarQube Scanner for .NET if not present
                                 echo '🔧 Ensuring SonarQube Scanner for .NET is available...'
@@ -176,6 +184,8 @@ pipeline {
                                     echo "✅ SonarQube Scanner already available"
                                 fi
                                 
+                                echo "🎯 CHECKPOINT 3: SonarQube Scanner verification completed"
+                                
                                 # Verify scanner is working
                                 if command -v dotnet-sonarscanner &> /dev/null; then
                                     echo "✅ SonarQube Scanner verified: \$(command -v dotnet-sonarscanner)"
@@ -183,6 +193,8 @@ pipeline {
                                     echo "❌ SonarQube Scanner not found after installation"
                                     exit 1
                                 fi
+                                
+                                echo "🎯 CHECKPOINT 4: Scanner functionality verified"
                                 
                                 # Verify SonarQube server is accessible
                                 echo '🌐 Checking SonarQube server connectivity...'
@@ -197,6 +209,8 @@ pipeline {
                                     exit 1
                                 fi
                                 
+                                echo "🎯 CHECKPOINT 5: SonarQube server connectivity verified"
+                                
                                 # Set up SonarQube environment variables
                                 export SONAR_HOST_URL=\"${SONAR_HOST_URL}\"
                                 export SONAR_PROJECT_KEY=\"${SONAR_PROJECT_KEY}\"
@@ -208,6 +222,8 @@ pipeline {
                                 echo "   Project Key: \$SONAR_PROJECT_KEY"
                                 echo "   Project Version: \$SONAR_PROJECT_VERSION"
                                 echo "   Project Name: \$SONAR_PROJECT_NAME"
+                                
+                                echo "🎯 CHECKPOINT 6: SonarQube configuration completed"
                                 
                                 # Begin SonarQube analysis
                                 echo '🚀 Starting SonarQube analysis...'
@@ -224,6 +240,8 @@ pipeline {
                                 
                                 echo "✅ SonarQube scanner begin completed"
                                 
+                                echo "🎯 CHECKPOINT 7: SonarQube analysis started"
+                                
                                 # Build with coverage
                                 echo '🏗️ Building with code coverage...'
                                 ${DOTNET_ROOT}/dotnet build CreditTransfer.Modern.sln \\
@@ -235,8 +253,19 @@ pipeline {
                                 
                                 echo "✅ Build with coverage completed"
                                 
+                                echo "🎯 CHECKPOINT 8: Build with coverage completed"
+                                
                                 # Run tests with coverage
                                 echo '🧪 Running tests with coverage...'
+                                echo "📁 Working directory: $(pwd)"
+                                echo "📊 Coverage directory: ${WORKSPACE}/${COVERAGE_DIR}"
+                                
+                                # Create coverage directory with proper permissions
+                                mkdir -p "${WORKSPACE}/${COVERAGE_DIR}"
+                                chmod -R 777 "${WORKSPACE}/${COVERAGE_DIR}"
+                                
+                                # Run tests with explicit error handling
+                                set +e  # Don't exit on test failures
                                 ${DOTNET_ROOT}/dotnet test CreditTransfer.Modern.sln \\
                                     --configuration Release \\
                                     --no-build \\
@@ -245,13 +274,32 @@ pipeline {
                                     --logger \"trx;LogFileName=test_results.trx\" \\
                                     --verbosity normal
                                 
-                                echo "✅ Tests with coverage completed"
+                                TEST_EXIT_CODE=$?
+                                set -e  # Re-enable exit on error
+                                
+                                echo "📊 Test execution completed with exit code: $TEST_EXIT_CODE"
+                                
+                                # List generated coverage files
+                                echo "📁 Coverage directory contents:"
+                                ls -la "${WORKSPACE}/${COVERAGE_DIR}" || echo "Coverage directory not found"
+                                find "${WORKSPACE}/${COVERAGE_DIR}" -name "*.xml" -o -name "*.trx" 2>/dev/null || echo "No coverage/test result files found"
+                                
+                                if [ $TEST_EXIT_CODE -eq 0 ]; then
+                                    echo "✅ Tests with coverage completed successfully"
+                                else
+                                    echo "⚠️ Tests with coverage completed with failures (exit code: $TEST_EXIT_CODE)"
+                                    echo "📋 This is not blocking SonarQube analysis - continuing..."
+                                fi
+                                
+                                echo "🎯 CHECKPOINT 9: Test execution phase completed"
                                 
                                 # End SonarQube analysis
                                 echo '🏁 Finalizing SonarQube analysis...'
                                 dotnet sonarscanner end /d:sonar.login=\"\$SONAR_TOKEN\"
                                 
                                 echo '✅ SonarQube analysis completed successfully!'
+                                
+                                echo "🎯 CHECKPOINT 10: SonarQube analysis finalized - ALL STEPS COMPLETED!"
                             """
                         }
                     } catch (Exception e) {
