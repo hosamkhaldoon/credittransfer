@@ -219,7 +219,7 @@ pipeline {
                             try {
                                 def qualityGate = httpRequest(
                                     url: "${env.SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=credit-transfer-modern",
-                                    authentication: 'sonartokenV2',
+                                    authentication: '3d6fe3e46514f485e4a281189029753504c5d799',
                                     validResponseCodes: '200,404'
                                 )
                                 
