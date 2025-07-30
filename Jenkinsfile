@@ -40,6 +40,7 @@ pipeline {
         SONAR_TOKEN = credentials('sonartokenV3')  // Will be set from Jenkins credentials
         SONAR_PROJECT_KEY = 'credit-transfer-modern'  // SonarQube project key
         SONAR_PROJECT_VERSION = "${VERSION}"  // SonarQube project version
+        SONAR_PROJECT_NAME = "Credit Transfer Modern"  // SonarQube project name
         
         // Notification
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
@@ -161,7 +162,7 @@ pipeline {
                         export SONAR_HOST_URL=\"${SONAR_HOST_URL}\"
                         export SONAR_TOKEN=\"${SONAR_TOKEN}\"
                         export SONAR_PROJECT_KEY=\"${SONAR_PROJECT_KEY}\"
-                        export SONAR_PROJECT_NAME=\"Credit Transfer Modern\"
+                        export SONAR_PROJECT_NAME=\"${SONAR_PROJECT_NAME}\"
                         export SONAR_PROJECT_VERSION=\"${VERSION}\"
                         
                         echo \"SonarQube Host: $SONAR_HOST_URL\"
