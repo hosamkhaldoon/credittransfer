@@ -39,6 +39,7 @@ pipeline {
         SONAR_HOST_URL = 'http://localhost:9000'  // SonarQube server URL
         SONAR_TOKEN = credentials('sonartokenV3')  // Will be set from Jenkins credentials
         SONAR_PROJECT_KEY = 'credit-transfer-modern'  // SonarQube project key
+        SONAR_PROJECT_VERSION = "${VERSION}"  // SonarQube project version
         
         // Notification
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
