@@ -167,12 +167,21 @@ pipeline {
                                 echo "✅ Changed to Migrated directory: \$(pwd)"
                                 
                                 # Install SonarQube Scanner for .NET if not present
+                                echo '🔧 Ensuring SonarQube Scanner for .NET is available...'
                                 if ! command -v dotnet-sonarscanner &> /dev/null; then
-                                    echo '🔧 Installing SonarQube Scanner for .NET...'
-                                    ${DOTNET_ROOT}/dotnet tool install --global dotnet-sonarscanner
-                                    echo "✅ SonarQube Scanner installed"
+                                    echo 'Installing SonarQube Scanner for .NET...'
+                                    ${DOTNET_ROOT}/dotnet tool install --global dotnet-sonarscanner || true
+                                    echo "✅ SonarQube Scanner installation completed"
                                 else
                                     echo "✅ SonarQube Scanner already available"
+                                fi
+                                
+                                # Verify scanner is working
+                                if command -v dotnet-sonarscanner &> /dev/null; then
+                                    echo "✅ SonarQube Scanner verified: \$(command -v dotnet-sonarscanner)"
+                                else
+                                    echo "❌ SonarQube Scanner not found after installation"
+                                    exit 1
                                 fi
                                 
                                 # Verify SonarQube server is accessible
