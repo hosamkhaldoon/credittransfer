@@ -159,11 +159,7 @@ pipeline {
                             ${DOTNET_ROOT}/dotnet tool install --global dotnet-sonarscanner
                         fi
                         
-                        export SONAR_HOST_URL=\"${SONAR_HOST_URL}\"
-                        export SONAR_TOKEN=\"${SONAR_TOKEN}\"
-                        export SONAR_PROJECT_KEY=\"${SONAR_PROJECT_KEY}\"
-                        export SONAR_PROJECT_NAME=\"${SONAR_PROJECT_NAME}\"
-                        export SONAR_PROJECT_VERSION=\"${VERSION}\"
+                      
                         
                         echo \"SonarQube Host: $SONAR_HOST_URL\"
                         echo \"Project Key: $SONAR_PROJECT_KEY\"
