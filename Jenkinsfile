@@ -150,7 +150,7 @@ pipeline {
                     // Try to load SonarQube credentials and run analysis
                     try {
                         withCredentials([string(credentialsId: 'sonartokenV3', variable: 'SONAR_TOKEN')]) {
-                            sh """
+                            sh '''
                                 set -e  # Exit on any error
                                 
                                 echo "🔍 Starting SonarQube Analysis Debug Mode"
@@ -160,17 +160,17 @@ pipeline {
                                 echo "🔧 Available disk space: $(df -h . | tail -1)"
                                 
                                 # Export environment variables
-                                export PATH=\"\$PATH:/root/.dotnet/tools:${DOTNET_ROOT}:${PATH}\"
+                                export PATH="$PATH:/root/.dotnet/tools:${DOTNET_ROOT}:${PATH}"
                                 export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
                                 
                                 echo "✅ Environment variables set"
-                                echo "PATH: \$PATH"
+                                echo "PATH: $PATH"
                                 echo "DOTNET_ROOT: ${DOTNET_ROOT}"
                                 
                                 echo "🎯 CHECKPOINT 1: Environment setup completed"
                                 
                                 cd Migrated
-                                echo "✅ Changed to Migrated directory: \$(pwd)"
+                                echo "✅ Changed to Migrated directory: $(pwd)"
                                 
                                 echo "🎯 CHECKPOINT 2: Directory navigation completed"
                                 
@@ -188,7 +188,7 @@ pipeline {
                                 
                                 # Verify scanner is working
                                 if command -v dotnet-sonarscanner &> /dev/null; then
-                                    echo "✅ SonarQube Scanner verified: \$(command -v dotnet-sonarscanner)"
+                                    echo "✅ SonarQube Scanner verified: $(command -v dotnet-sonarscanner)"
                                 else
                                     echo "❌ SonarQube Scanner not found after installation"
                                     exit 1
@@ -212,30 +212,30 @@ pipeline {
                                 echo "🎯 CHECKPOINT 5: SonarQube server connectivity verified"
                                 
                                 # Set up SonarQube environment variables
-                                export SONAR_HOST_URL=\"${SONAR_HOST_URL}\"
-                                export SONAR_PROJECT_KEY=\"${SONAR_PROJECT_KEY}\"
-                                export SONAR_PROJECT_NAME=\"${SONAR_PROJECT_NAME}\"
-                                export SONAR_PROJECT_VERSION=\"${SONAR_PROJECT_VERSION}\"
+                                export SONAR_HOST_URL="${SONAR_HOST_URL}"
+                                export SONAR_PROJECT_KEY="${SONAR_PROJECT_KEY}"
+                                export SONAR_PROJECT_NAME="${SONAR_PROJECT_NAME}"
+                                export SONAR_PROJECT_VERSION="${SONAR_PROJECT_VERSION}"
                                 
                                 echo "✅ SonarQube environment variables configured:"
-                                echo "   Host: \$SONAR_HOST_URL"
-                                echo "   Project Key: \$SONAR_PROJECT_KEY"
-                                echo "   Project Version: \$SONAR_PROJECT_VERSION"
-                                echo "   Project Name: \$SONAR_PROJECT_NAME"
+                                echo "   Host: $SONAR_HOST_URL"
+                                echo "   Project Key: $SONAR_PROJECT_KEY"
+                                echo "   Project Version: $SONAR_PROJECT_VERSION"
+                                echo "   Project Name: $SONAR_PROJECT_NAME"
                                 
                                 echo "🎯 CHECKPOINT 6: SonarQube configuration completed"
                                 
                                 # Begin SonarQube analysis
                                 echo '🚀 Starting SonarQube analysis...'
                                 dotnet sonarscanner begin \\
-                                    /k:\"\$SONAR_PROJECT_KEY\" \\
-                                    /n:\"\$SONAR_PROJECT_NAME\" \\
-                                    /v:\"\$SONAR_PROJECT_VERSION\" \\
-                                    /d:sonar.host.url=\"\$SONAR_HOST_URL\" \\
-                                    /d:sonar.login=\"\$SONAR_TOKEN\" \\
-                                    /d:sonar.cs.opencover.reportsPaths=\"**/coverage.opencover.xml\" \\
-                                    /d:sonar.coverage.exclusions=\"**/*Test*,**/*Tests*,**/*test*,**/*tests*\" \\
-                                    /d:sonar.exclusions=\"**/bin/**/*,**/obj/**/*,**/node_modules/**/*\" \\
+                                    /k:"$SONAR_PROJECT_KEY" \\
+                                    /n:"$SONAR_PROJECT_NAME" \\
+                                    /v:"$SONAR_PROJECT_VERSION" \\
+                                    /d:sonar.host.url="$SONAR_HOST_URL" \\
+                                    /d:sonar.login="$SONAR_TOKEN" \\
+                                    /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \\
+                                    /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/*test*,**/*tests*" \\
+                                    /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \\
                                     /d:sonar.sourceEncoding=UTF-8
                                 
                                 echo "✅ SonarQube scanner begin completed"
@@ -269,9 +269,9 @@ pipeline {
                                 ${DOTNET_ROOT}/dotnet test CreditTransfer.Modern.sln \\
                                     --configuration Release \\
                                     --no-build \\
-                                    --collect:\"XPlat Code Coverage\" \\
-                                    --results-directory \"${WORKSPACE}/${COVERAGE_DIR}\" \\
-                                    --logger \"trx;LogFileName=test_results.trx\" \\
+                                    --collect:"XPlat Code Coverage" \\
+                                    --results-directory "${WORKSPACE}/${COVERAGE_DIR}" \\
+                                    --logger "trx;LogFileName=test_results.trx" \\
                                     --verbosity normal
                                 
                                 TEST_EXIT_CODE=$?
@@ -295,12 +295,12 @@ pipeline {
                                 
                                 # End SonarQube analysis
                                 echo '🏁 Finalizing SonarQube analysis...'
-                                dotnet sonarscanner end /d:sonar.login=\"\$SONAR_TOKEN\"
+                                dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
                                 
                                 echo '✅ SonarQube analysis completed successfully!'
                                 
                                 echo "🎯 CHECKPOINT 10: SonarQube analysis finalized - ALL STEPS COMPLETED!"
-                            """
+                            '''
                         }
                     } catch (Exception e) {
                         echo "⚠️ SonarQube analysis failed: ${e.getMessage()}"
