@@ -146,9 +146,19 @@ pipeline {
             steps {
                 script {
                     echo "🔍 Running SonarQube Code Quality Analysis"
+                    
+                    // Check if SonarQube token is available
+                    if (!env.SONAR_TOKEN) {
+                        echo "⚠️ SonarQube token not available. Skipping SonarQube analysis."
+                        echo "💡 To enable SonarQube analysis:"
+                        echo "   1. Create a token in SonarQube UI (My Account → Security → Tokens)"
+                        echo "   2. Add it as 'Secret text' credential with ID 'sonartokenV3' in Jenkins"
+                        return
+                    }
+                    
                     sh """
                         # Export environment variables
-                        export PATH=\"$PATH:/root/.dotnet/tools:${DOTNET_ROOT}:${PATH}\"
+                        export PATH=\"\$PATH:/root/.dotnet/tools:${DOTNET_ROOT}:${PATH}\"
                         export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
                         
                         cd Migrated
@@ -159,47 +169,59 @@ pipeline {
                             ${DOTNET_ROOT}/dotnet tool install --global dotnet-sonarscanner
                         fi
                         
-                      
+                        # Verify SonarQube server is accessible
+                        echo 'Checking SonarQube server connectivity...'
+                        if ! curl -f -s "${SONAR_HOST_URL}/api/system/status" > /dev/null; then
+                            echo "⚠️ SonarQube server at ${SONAR_HOST_URL} is not accessible"
+                            echo "💡 Make sure SonarQube is running: docker ps | grep sonarqube"
+                            exit 1
+                        fi
                         
-                        echo \"SonarQube Host: $SONAR_HOST_URL\"
-                        echo \"Project Key: $SONAR_PROJECT_KEY\"
-                        echo \"Project Version: $SONAR_PROJECT_VERSION\"
+                        export SONAR_HOST_URL=\"${SONAR_HOST_URL}\"
+                        export SONAR_TOKEN=\"${SONAR_TOKEN}\"
+                        export SONAR_PROJECT_KEY=\"${SONAR_PROJECT_KEY}\"
+                        export SONAR_PROJECT_NAME=\"${SONAR_PROJECT_NAME}\"
+                        export SONAR_PROJECT_VERSION=\"${SONAR_PROJECT_VERSION}\"
+                        
+                        echo \"SonarQube Host: \$SONAR_HOST_URL\"
+                        echo \"Project Key: \$SONAR_PROJECT_KEY\"
+                        echo \"Project Version: \$SONAR_PROJECT_VERSION\"
                         
                         # Begin SonarQube analysis
                         echo 'Starting SonarQube analysis...'
-                        dotnet sonarscanner begin \
-                            /k:\"$SONAR_PROJECT_KEY\" \
-                            /n:\"$SONAR_PROJECT_NAME\" \
-                            /v:\"$SONAR_PROJECT_VERSION\" \
-                            /d:sonar.host.url=\"$SONAR_HOST_URL\" \
-                            /d:sonar.login=\"$SONAR_TOKEN\" \
-                            /d:sonar.cs.opencover.reportsPaths=\"**/coverage.opencover.xml\" \
-                            /d:sonar.coverage.exclusions=\"**/*Test*,**/*Tests*,**/*test*,**/*tests*\" \
-                            /d:sonar.exclusions=\"**/bin/**/*,**/obj/**/*,**/node_modules/**/*\" \
+                        dotnet sonarscanner begin \\
+                            /k:\"\$SONAR_PROJECT_KEY\" \\
+                            /n:\"\$SONAR_PROJECT_NAME\" \\
+                            /v:\"\$SONAR_PROJECT_VERSION\" \\
+                            /d:sonar.host.url=\"\$SONAR_HOST_URL\" \\
+                            /d:sonar.login=\"\$SONAR_TOKEN\" \\
+                            /d:sonar.cs.opencover.reportsPaths=\"**/coverage.opencover.xml\" \\
+                            /d:sonar.coverage.exclusions=\"**/*Test*,**/*Tests*,**/*test*,**/*tests*\" \\
+                            /d:sonar.exclusions=\"**/bin/**/*,**/obj/**/*,**/node_modules/**/*\" \\
                             /d:sonar.sourceEncoding=UTF-8
                         
                         # Build with coverage
                         echo 'Building with code coverage...'
-                        ${DOTNET_ROOT}/dotnet build CreditTransfer.Modern.sln \
-                            --configuration Release \
-                            --no-restore \
-                            /p:CollectCoverage=true \
-                            /p:CoverletOutputFormat=opencover \
+                        ${DOTNET_ROOT}/dotnet build CreditTransfer.Modern.sln \\
+                            --configuration Release \\
+                            --no-restore \\
+                            /p:CollectCoverage=true \\
+                            /p:CoverletOutputFormat=opencover \\
                             /p:Version=${VERSION}
                         
                         # Run tests with coverage
                         echo 'Running tests with coverage...'
-                        ${DOTNET_ROOT}/dotnet test CreditTransfer.Modern.sln \
-                            --configuration Release \
-                            --no-build \
-                            --collect:\"XPlat Code Coverage\" \
-                            --results-directory \"${WORKSPACE}/${COVERAGE_DIR}\" \
-                            --logger \"trx;LogFileName=test_results.trx\" \
+                        ${DOTNET_ROOT}/dotnet test CreditTransfer.Modern.sln \\
+                            --configuration Release \\
+                            --no-build \\
+                            --collect:\"XPlat Code Coverage\" \\
+                            --results-directory \"${WORKSPACE}/${COVERAGE_DIR}\" \\
+                            --logger \"trx;LogFileName=test_results.trx\" \\
                             --verbosity normal
                         
                         # End SonarQube analysis
                         echo 'Finalizing SonarQube analysis...'
-                        dotnet sonarscanner end /d:sonar.login=\"$SONAR_TOKEN\"
+                        dotnet sonarscanner end /d:sonar.login=\"\$SONAR_TOKEN\"
                         
                         echo '✅ SonarQube analysis completed'
                     """
