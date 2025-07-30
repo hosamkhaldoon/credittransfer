@@ -35,6 +35,10 @@ pipeline {
         DOCKER_TAG = "${env.BUILD_NUMBER}"
         FORCE_DOCKER_PUSH = 'true'  // Force push regardless of branch (set to 'false' to disable)
         
+        // SonarQube Configuration
+        SONAR_HOST_URL = 'http://localhost:9000'  // SonarQube server URL
+        SONAR_TOKEN = credentials('sonartokenV2')  // Will be set from Jenkins credentials
+        
         // Notification
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
         
@@ -131,6 +135,109 @@ pipeline {
                             --verbosity normal \
                             /p:Version=${VERSION}
                     '''
+                }
+            }
+        }
+
+        stage('🔍 SonarQube Analysis') {
+            steps {
+                script {
+                    echo "🔍 Running SonarQube Code Quality Analysis"
+                    sh '''#!/bin/bash
+                        # Export environment variables
+                        export PATH="${DOTNET_ROOT}:${PATH}"
+                        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+                        
+                        cd Migrated
+                        
+                        # Install SonarQube Scanner for .NET
+                        if ! command -v dotnet-sonarscanner &> /dev/null; then
+                            echo "Installing SonarQube Scanner for .NET..."
+                            ${DOTNET_ROOT}/dotnet tool install --global dotnet-sonarscanner
+                        fi
+                        
+                        # Set SonarQube environment variables
+                        export SONAR_HOST_URL="${env.SONAR_HOST_URL ?: 'http://localhost:9000'}"
+                        export SONAR_TOKEN="${env.SONAR_TOKEN}"
+                        export SONAR_PROJECT_KEY="credit-transfer-modern"
+                        export SONAR_PROJECT_NAME="Credit Transfer Modern"
+                        export SONAR_PROJECT_VERSION="${env.VERSION}"
+                        
+                        echo "SonarQube Host: ${SONAR_HOST_URL}"
+                        echo "Project Key: ${SONAR_PROJECT_KEY}"
+                        echo "Project Version: ${SONAR_PROJECT_VERSION}"
+                        
+                        # Begin SonarQube analysis
+                        echo "Starting SonarQube analysis..."
+                        ${DOTNET_ROOT}/dotnet sonarscanner begin \
+                            /k:"${SONAR_PROJECT_KEY}" \
+                            /n:"${SONAR_PROJECT_NAME}" \
+                            /v:"${SONAR_PROJECT_VERSION}" \
+                            /d:sonar.host.url="${SONAR_HOST_URL}" \
+                            /d:sonar.login="${SONAR_TOKEN}" \
+                            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
+                            /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/*test*,**/*tests*" \
+                            /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
+                            /d:sonar.sourceEncoding=UTF-8
+                        
+                        # Build with coverage
+                        echo "Building with code coverage..."
+                        ${DOTNET_ROOT}/dotnet build "${SOLUTION_FILE}" \
+                            --configuration Release \
+                            --no-restore \
+                            /p:CollectCoverage=true \
+                            /p:CoverletOutputFormat=opencover \
+                            /p:Version=${VERSION}
+                        
+                        # Run tests with coverage
+                        echo "Running tests with coverage..."
+                        ${DOTNET_ROOT}/dotnet test "${SOLUTION_FILE}" \
+                            --configuration Release \
+                            --no-build \
+                            --collect:"XPlat Code Coverage" \
+                            --results-directory "${WORKSPACE}/${COVERAGE_DIR}" \
+                            --logger "trx;LogFileName=test_results.trx" \
+                            --verbosity normal
+                        
+                        # End SonarQube analysis
+                        echo "Finalizing SonarQube analysis..."
+                        ${DOTNET_ROOT}/dotnet sonarscanner end \
+                            /d:sonar.login="${SONAR_TOKEN}"
+                        
+                        echo "✅ SonarQube analysis completed"
+                    '''
+                }
+            }
+            post {
+                always {
+                    script {
+                        // Archive SonarQube reports
+                        archiveArtifacts artifacts: '**/coverage/**/*', allowEmptyArchive: true
+                        
+                        // Add SonarQube quality gate check
+                        if (env.SONAR_HOST_URL) {
+                            try {
+                                def qualityGate = httpRequest(
+                                    url: "${env.SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=credit-transfer-modern",
+                                    authentication: 'sonar-token',
+                                    validResponseCodes: '200,404'
+                                )
+                                
+                                if (qualityGate.status == 200) {
+                                    def result = readJSON text: qualityGate.content
+                                    echo "SonarQube Quality Gate: ${result.projectStatus.status}"
+                                    
+                                    if (result.projectStatus.status == 'ERROR') {
+                                        error "SonarQube Quality Gate failed! Check: ${env.SONAR_HOST_URL}/dashboard?id=credit-transfer-modern"
+                                    }
+                                } else {
+                                    echo "⚠️ SonarQube Quality Gate not available (status: ${qualityGate.status})"
+                                }
+                            } catch (Exception e) {
+                                echo "⚠️ SonarQube Quality Gate check failed: ${e.getMessage()}"
+                            }
+                        }
+                    }
                 }
             }
         }

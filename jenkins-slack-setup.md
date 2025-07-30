@@ -25,7 +25,11 @@
    - Click "Add New Webhook to Workspace"
    - Select channel: `#jenkins-builds`
    - Click "Allow"
-
+Step 1: Create Simple Webhook
+Go to: https://leading-point-ci.slack.com/apps (replace with your workspace)
+Search for: "Incoming Webhooks"
+Add to Slack directly
+Choose channel: #general (or create #jenkins-builds)
 8. **Copy the Webhook URL** (looks like):
    ```
    https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
