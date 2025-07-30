@@ -38,6 +38,7 @@ pipeline {
         // SonarQube Configuration
         SONAR_HOST_URL = 'http://localhost:9000'  // SonarQube server URL
         SONAR_TOKEN = credentials('sonartokenV3')  // Will be set from Jenkins credentials
+        SONAR_PROJECT_KEY = 'credit-transfer-modern'  // SonarQube project key
         
         // Notification
         EMAIL_RECIPIENTS = 'hosam93644@gmail.com'
@@ -158,7 +159,7 @@ pipeline {
                         
                         export SONAR_HOST_URL=\"${SONAR_HOST_URL}\"
                         export SONAR_TOKEN=\"${SONAR_TOKEN}\"
-                        export SONAR_PROJECT_KEY=\"credit-transfer-modern\"
+                        export SONAR_PROJECT_KEY=\"${SONAR_PROJECT_KEY}\"
                         export SONAR_PROJECT_NAME=\"Credit Transfer Modern\"
                         export SONAR_PROJECT_VERSION=\"${VERSION}\"
                         
@@ -216,7 +217,7 @@ pipeline {
                         if (env.SONAR_HOST_URL) {
                             try {
                                 def qualityGate = httpRequest(
-                                    url: "${env.SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=credit-transfer-modern",
+                                    url: "${env.SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=${env.SONAR_PROJECT_KEY}",
                                     authentication: 'sonartokenV3',
                                     validResponseCodes: '200,404'
                                 )
