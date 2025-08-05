@@ -60,6 +60,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
+    services:
+      sonarqube:
+        image: sonarqube:10-community
+        ports:
+          - 9000:9000
+        env:
+          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/api/system/status || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
+    
     outputs:
       version: ${{ steps.version.outputs.version }}
       build-number: ${{ steps.version.outputs.build-number }}
@@ -141,22 +154,70 @@ jobs:
           exit 0
         fi
         
-        echo "⏳ Waiting for SonarQube to be ready..."
-        timeout 300s bash -c 'until curl -f http://localhost:9000/api/system/status; do sleep 5; done'
+        echo "⏳ Waiting for SonarQube service to be ready..."
+        echo "🔍 This may take up to 3 minutes for SonarQube to fully initialize..."
+        
+        # Wait longer for SonarQube to be ready (up to 5 minutes)
+        timeout 300s bash -c '
+          while true; do
+            echo "Checking SonarQube status..."
+            if curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
+              echo "✅ SonarQube is ready!"
+              break
+            fi
+            echo "⏳ SonarQube still starting up, waiting 10 seconds..."
+            sleep 10
+          done
+        ' || {
+          echo "❌ SonarQube failed to start within 5 minutes"
+          echo "🔍 Checking SonarQube logs..."
+          curl -s http://localhost:9000/api/system/status || echo "Cannot connect to SonarQube"
+          exit 1
+        }
         
         echo "🔍 Installing SonarQube Scanner..."
         dotnet tool install --global dotnet-sonarscanner || echo "Scanner already installed"
         
+        echo "🔍 Verifying SonarQube connection and creating project if needed..."
+        # Check if project exists, create if not
+        PROJECT_EXISTS=$(curl -s -u admin:admin "http://localhost:9000/api/projects/search?projects=$SONAR_PROJECT_KEY" | grep -o '"total":[0-9]*' | cut -d':' -f2)
+        
+        if [ "$PROJECT_EXISTS" = "0" ]; then
+          echo "📋 Creating SonarQube project: $SONAR_PROJECT_KEY"
+          curl -s -u admin:admin -X POST "http://localhost:9000/api/projects/create" \
+            -d "name=$SONAR_PROJECT_NAME" \
+            -d "project=$SONAR_PROJECT_KEY" || echo "Project creation failed or already exists"
+          
+          # Generate a token for the project (using default admin credentials)
+          echo "🔑 Generating SonarQube token..."
+          GENERATED_TOKEN=$(curl -s -u admin:admin -X POST "http://localhost:9000/api/user_tokens/generate" \
+            -d "name=github-actions-token" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+          
+          if [ -n "$GENERATED_TOKEN" ] && [ -z "$SONAR_TOKEN" ]; then
+            echo "✅ Generated token: ${GENERATED_TOKEN:0:10}..."
+            SONAR_TOKEN="$GENERATED_TOKEN"
+          fi
+        fi
+        
         echo "🚀 Starting SonarQube analysis..."
         cd Migrated
         
-        # Begin analysis (removed /o parameter for local SonarQube)
+        # Use token if available, otherwise use default admin credentials
+        if [ -n "$SONAR_TOKEN" ]; then
+          echo "🔑 Using provided SONAR_TOKEN for authentication"
+          AUTH_PARAM="/d:sonar.login=$SONAR_TOKEN"
+        else
+          echo "🔑 Using default admin credentials for authentication"
+          AUTH_PARAM="/d:sonar.login=admin /d:sonar.password=admin"
+        fi
+        
+        # Begin analysis
         dotnet sonarscanner begin \
           /k:"$SONAR_PROJECT_KEY" \
           /n:"$SONAR_PROJECT_NAME" \
           /v:"${{ steps.version.outputs.version }}" \
           /d:sonar.host.url="$SONAR_HOST_URL" \
-          /d:sonar.login="$SONAR_TOKEN" \
+          $AUTH_PARAM \
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
           /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/TestProject*" \
           /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
@@ -181,7 +242,11 @@ jobs:
           --verbosity normal || echo "Tests completed with some failures"
         
         # End analysis
-        dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
+        if [ -n "$SONAR_TOKEN" ]; then
+          dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
+        else
+          dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin
+        fi
         
         echo "✅ SonarQube analysis completed"
 
