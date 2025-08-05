@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credittransfer-web
+  namespace: credittransfer
+  labels:
+    app: credittransfer-web
+    version: v1
+spec:
+  replicas: 1  # Single replica to avoid conflicts
+  selector:
+    matchLabels:
+      app: credittransfer-web
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: credittransfer-web
+        version: v1
+      annotations:
+        # Istio annotations for observability
+        sidecar.istio.io/proxyCPU: "10m"
+        sidecar.istio.io/proxyMemory: "128Mi"
+    spec:
+      containers:
+      - name: credittransfer-web
+        image: credittransfer-web:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        envFrom:
+        - configMapRef:
+            name: credittransfer-config
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Production"
+        - name: ASPNETCORE_URLS
+          value: "http://+:80"
+        - name: CreditTransferApi__BaseUrl
+          value: "http://credittransfer-api"
+        - name: CreditTransferApi__TransferEndpoint
+          value: "/api/credittransfer/transfer"
+        - name: Keycloak__Authority
+          valueFrom:
+            configMapKeyRef:
+              name: credittransfer-config
+              key: KEYCLOAK_AUTHORITY
+        - name: Keycloak__TokenEndpoint
+          value: "http://keycloak:8080/realms/credittransfer/protocol/openid-connect/token"
+        - name: Keycloak__ClientId
+          value: "credittransfer-api"
+        - name: Keycloak__ClientSecret
+          value: "credittransfer-secret-2024"
+        - name: Keycloak__GrantType
+          value: "client_credentials"
+        - name: Keycloak__Scope
+          value: "openid profile email"
+        - name: CountryCode
+          value: "968"
+        - name: OpenTelemetry__ServiceName
+          value: "CreditTransfer.WebHandler"
+        - name: OpenTelemetry__ServiceVersion
+          value: "1.0.0"
+        - name: OpenTelemetry__Exporters__Otlp__Endpoint
+          value: "http://otel-collector:4318"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 15
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: credittransfer-web
+  namespace: credittransfer
+  labels:
+    app: credittransfer-web
+spec:
+  selector:
+    app: credittransfer-web
+  ports:
+  - port: 80          # External service port (for other pods)
+    targetPort: 80    # Container port (where app listens)
+    name: http
+  type: ClusterIP 

@@ -5,7 +5,20 @@ metadata:
   namespace: credittransfer
 spec:
   type: ExternalName
-  externalName: 10.1.132.98
+  externalName: host.docker.internal
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+---
+# Alternative ClusterIP configuration for direct IP access
+apiVersion: v1  
+kind: Service
+metadata:
+  name: nobill-external-direct
+  namespace: credittransfer
+spec:
+  type: ClusterIP
   ports:
   - port: 80
     targetPort: 80
@@ -14,22 +27,11 @@ spec:
 apiVersion: v1
 kind: Endpoints
 metadata:
-  name: nobill-external-endpoints
+  name: nobill-external-direct
   namespace: credittransfer
 subsets:
 - addresses:
   - ip: 10.1.132.98
   ports:
   - port: 80
-    protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: nobill-external-endpoints
-  namespace: credittransfer
-spec:
-  ports:
-  - port: 80
-    targetPort: 80
     protocol: TCP 

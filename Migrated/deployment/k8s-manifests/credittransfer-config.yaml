@@ -8,9 +8,10 @@ data:
   ASPNETCORE_ENVIRONMENT: "Production"
   
   # Database Configuration
-  ConnectionStrings__DefaultConnection: "Server=external-sql-server-direct,1433;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;MultipleActiveResultSets=True;Encrypt=False;Connection Timeout=60"
-  CONNECTION_STRING: "Server=external-sql-server-direct,1433;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;MultipleActiveResultSets=True;Encrypt=False;Connection Timeout=60"
-  
+  ConnectionStrings__DefaultConnection: "Server=external-sql-server-direct,1433;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;MultipleActiveResultSets=True;Encrypt=False;Connection Timeout=10"
+  CONNECTION_STRING: "Server=external-sql-server-direct,1433;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;MultipleActiveResultSets=True;Encrypt=False;Connection Timeout=10"
+  ConnectionStrings_DefaultConnection: "Server=external-sql-server-direct,1433;Database=CreditTransfer;User Id=sa;Password=fas@335$;TrustServerCertificate=true;MultipleActiveResultSets=True;Encrypt=False;Connection Timeout=10"
+
   # Redis Configuration 
   ConnectionStrings__RedisConnection: "redis:6379,password=CreditTransfer2024!"
   
@@ -26,17 +27,12 @@ data:
   OTEL_SERVICE_NAME: "credittransfer-api"
   OTEL_RESOURCE_ATTRIBUTES: "service.name=credittransfer-api,service.version=1.0.0"
   
-  # NoBill Service Configuration
-  NobillCalls__ServiceUrl: "http://nobill-service:80/NobillProxy/NobillCalls.asmx"
-  NobillCalls__UserName: "transfercredit"
-  NobillCalls__Password: "p@ssw0rd"
-  NobillCalls__TimeoutSeconds: "60"
-  
+
   # Correct configuration keys that NobillCallsService actually uses
-  NobillCalls_ServiceUrl: "http://external-proxy:31080/NobillProxy/NobillCalls.asmx"
+  NobillCalls_ServiceUrl: "http://nobill-service:80/NobillProxy/NobillCalls.asmx"
   NobillCalls_UserName: "transfercredit"
   NobillCalls_Password: "p@ssw0rd"
-  NobillCalls_TimeoutSeconds: "60"
+  NobillCalls_TimeoutSeconds: "10"
   
   # Redis Configuration  
   REDIS_CONNECTION_STRING: "redis:6379,password=CreditTransfer2024!"

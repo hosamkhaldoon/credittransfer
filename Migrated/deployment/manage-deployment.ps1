@@ -91,10 +91,11 @@ function Test-IstioInstalled {
         $istioctl = Get-Command istioctl -ErrorAction SilentlyContinue
         if (-not $istioctl) {
             Write-Warning "istioctl not found in PATH"
-            # Check if it's in the local istio directory
-            $localIstioctl = Join-Path $PSScriptRoot "istio-1.26.2\bin\istioctl.exe"
+            # Check if it's in the local deployment directory
+            $localIstioctl = Join-Path $PSScriptRoot "istioctl.exe"
             if (Test-Path $localIstioctl) {
                 Write-Status "Found local istioctl at: $localIstioctl"
+                return $true
             } else {
                 return $false
             }
@@ -153,13 +154,13 @@ function Update-ImagePullPolicy {
             kubectl patch deployment credittransfer-api -n credittransfer --type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/imagePullPolicy", "value": "'$Policy'"}]'
             
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "âœ… Updated credittransfer-api image pull policy to '$Policy'"
+                Write-Success "✅ Updated credittransfer-api image pull policy to '$Policy'"
             } else {
-                Write-Warning "âš ï¸ Failed to update credittransfer-api image pull policy (trying alternative method...)"
+                Write-Warning "⚠️ Failed to update credittransfer-api image pull policy (trying alternative method...)"
                 # Alternative: Use environment variable substitution
                 kubectl set env deployment/credittransfer-api -n credittransfer --overwrite FORCE_UPDATE="$(Get-Date -Format 'yyyyMMddHHmmss')"
                 if ($LASTEXITCODE -eq 0) {
-                    Write-Success "âœ… Triggered credittransfer-api restart with timestamp update"
+                    Write-Success "✅ Triggered credittransfer-api restart with timestamp update"
                 } else {
                     $success = $false
                 }
@@ -173,13 +174,13 @@ function Update-ImagePullPolicy {
             kubectl patch deployment credittransfer-wcf -n credittransfer --type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/imagePullPolicy", "value": "'$Policy'"}]'
             
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "âœ… Updated credittransfer-wcf image pull policy to '$Policy'"
+                Write-Success "✅ Updated credittransfer-wcf image pull policy to '$Policy'"
             } else {
-                Write-Warning "âš ï¸ Failed to update credittransfer-wcf image pull policy (trying alternative method...)"
+                Write-Warning "⚠️ Failed to update credittransfer-wcf image pull policy (trying alternative method...)"
                 # Alternative: Use environment variable substitution
                 kubectl set env deployment/credittransfer-wcf -n credittransfer --overwrite FORCE_UPDATE="$(Get-Date -Format 'yyyyMMddHHmmss')"
                 if ($LASTEXITCODE -eq 0) {
-                    Write-Success "âœ… Triggered credittransfer-wcf restart with timestamp update"
+                    Write-Success "✅ Triggered credittransfer-wcf restart with timestamp update"
                 } else {
                     $success = $false
                 }
@@ -214,6 +215,10 @@ function Force-ImagePull {
         kubectl annotate deployment credittransfer-wcf -n credittransfer deployment.kubernetes.io/force-pull="$timestamp" --overwrite
         kubectl rollout restart deployment credittransfer-wcf -n credittransfer
         
+        Write-Status "Adding force-pull annotation to Web Handler deployment..."
+        kubectl annotate deployment credittransfer-web -n credittransfer deployment.kubernetes.io/force-pull="$timestamp" --overwrite
+        kubectl rollout restart deployment credittransfer-web -n credittransfer
+        
         Write-Progress "Waiting for rollouts to complete..."
         kubectl rollout status deployment credittransfer-api -n credittransfer --timeout=300s
         $apiStatus = $LASTEXITCODE
@@ -221,19 +226,24 @@ function Force-ImagePull {
         kubectl rollout status deployment credittransfer-wcf -n credittransfer --timeout=300s
         $wcfStatus = $LASTEXITCODE
         
-        if ($apiStatus -eq 0 -and $wcfStatus -eq 0) {
-            Write-Success "âœ… Successfully force-restarted all services (timestamp: $timestamp)"
+        kubectl rollout status deployment credittransfer-web -n credittransfer --timeout=300s
+        $webStatus = $LASTEXITCODE
+        
+        if ($apiStatus -eq 0 -and $wcfStatus -eq 0 -and $webStatus -eq 0) {
+            Write-Success "✅ Successfully force-restarted all services (timestamp: $timestamp)"
             Write-Status "Note: If images are available in registry, they will be pulled during restart"
         } else {
-            Write-Warning "âš ï¸ Some services may still be restarting (API: $apiStatus, WCF: $wcfStatus)"
+            Write-Warning "⚠️ Some services may still be restarting (API: $apiStatus, WCF: $wcfStatus, Web: $webStatus)"
         }
     } else {
         # Handle individual services
         $deploymentName = switch ($ServiceName.ToLower()) {
             "api" { "credittransfer-api" }
             "wcf" { "credittransfer-wcf" }
+            "web" { "credittransfer-web" }
             "credittransfer-api" { "credittransfer-api" }
             "credittransfer-wcf" { "credittransfer-wcf" }
+            "credittransfer-web" { "credittransfer-web" }
             default { 
                 Write-Warning "Unknown service name: $ServiceName. Trying: $ServiceName"
                 $ServiceName 
@@ -250,10 +260,10 @@ function Force-ImagePull {
         kubectl rollout status deployment $deploymentName -n credittransfer --timeout=300s
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "âœ… Successfully force-restarted $deploymentName (timestamp: $timestamp)"
+            Write-Success "✅ Successfully force-restarted $deploymentName (timestamp: $timestamp)"
             Write-Status "Note: If images are available in registry, they will be pulled during restart"
         } else {
-            Write-Warning "âš ï¸ $deploymentName may still be restarting (status code: $LASTEXITCODE)"
+            Write-Warning "⚠️ $deploymentName may still be restarting (status code: $LASTEXITCODE)"
         }
     }
     
@@ -261,19 +271,347 @@ function Force-ImagePull {
     Write-Status "Current pod status:"
     kubectl get pods -n credittransfer -l app=credittransfer-api -o wide 2>/dev/null | Select-Object -First 5
     kubectl get pods -n credittransfer -l app=credittransfer-wcf -o wide 2>/dev/null | Select-Object -First 5
+    kubectl get pods -n credittransfer -l app=credittransfer-web -o wide 2>/dev/null | Select-Object -First 5
     
     return $true
 }
+function Install-Istio {
+    Write-Status "Setting up Istio..."
+    
+    # Check if istioctl already exists in PATH
+    $istioctl = Get-Command istioctl -ErrorAction SilentlyContinue
+    if ($istioctl) {
+        Write-Status "istioctl already exists in PATH"
+        return $true
+    }
+    
+    # Check if Istio directory already exists
+    $existingIstioDir = Get-ChildItem -Directory -Filter "istio-*" | Select-Object -First 1
+    if ($existingIstioDir) {
+        Write-Status "Istio directory already exists at $($existingIstioDir.FullName)"
+        # Add istioctl to PATH
+        $env:PATH = "$($existingIstioDir.FullName)\bin;$env:PATH"
+        return $true
+    }
+    
+    # Download and extract Istio if not found
+    $istioVersion = "1.26.2"
+    $downloadUrl = "https://github.com/istio/istio/releases/download/$istioVersion/istio-$istioVersion-win.zip"
+    $outputFile = "istio.zip"
+    
+    Write-Status "Downloading Istio $istioVersion..."
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $outputFile
+    
+    Write-Status "Extracting Istio..."
+    Expand-Archive -Path $outputFile -DestinationPath . -Force
+    Remove-Item $outputFile
+    
+    # Find Istio directory
+    $istioDir = Get-ChildItem -Directory -Filter "istio-*" | Select-Object -First 1
+    if (-not $istioDir) {
+        Write-Error "Istio directory not found!"
+        return $false
+    }
+    
+    # Add istioctl to PATH
+    $env:PATH = "$($istioDir.FullName)\bin;$env:PATH"
+    
+    # Install Istio with demo profile
+    Write-Status "Installing Istio with demo profile..."
+    & "$($istioDir.FullName)\bin\istioctl.exe" install --set profile=demo -y
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to install Istio"
+        return $false
+    }
+    
+    # Create istio-system namespace if it doesn't exist
+    kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Install Prometheus with proper configuration
+    Write-Status "Installing Prometheus..."
+    $prometheusYaml = @"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus
+  namespace: istio-system
+  labels:
+    app: prometheus
+    release: istio
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    scrape_configs:
+    - job_name: 'istio-mesh'
+      kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+          - istio-system
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: istio-telemetry;prometheus
+    - job_name: 'kubernetes-pods'
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: ${1}:${2}
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+    - job_name: 'istio-policy'
+      kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+          - istio-system
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: istio-policy;http-policy-monitoring
+    - job_name: 'istio-telemetry'
+      kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+          - istio-system
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: istio-telemetry;http-monitoring
+    - job_name: 'pilot'
+      kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+          - istio-system
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: istiod;http-monitoring
+"@
+    $prometheusYaml | kubectl apply -f -
 
+    # Create Prometheus deployment and service
+    Write-Status "Creating Prometheus deployment and service..."
+    $prometheusDeploymentYaml = @"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: istio-system
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.45.0
+        args:
+          - '--storage.tsdb.retention=6h'
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--web.enable-lifecycle'
+        ports:
+        - name: http
+          containerPort: 9090
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/prometheus
+      volumes:
+      - name: config-volume
+        configMap:
+          name: prometheus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: istio-system
+  labels:
+    app: prometheus
+spec:
+  type: NodePort
+  ports:
+  - name: http
+    port: 9090
+    targetPort: 9090
+    nodePort: 30090
+  selector:
+    app: prometheus
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: istio-system
+  labels:
+    app: prometheus
+    release: istio
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    release: istio
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - configmaps
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    release: istio
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: istio-system
+"@
+    $prometheusDeploymentYaml | kubectl apply -f -
+
+    # Wait for Prometheus to be ready with simplified checks
+    Write-Status "Waiting for Prometheus to be ready..."
+    $retryCount = 0
+    $maxRetries = 12
+    do {
+        $ready = $false
+        $podStatus = kubectl get pods -n istio-system -l app=prometheus -o jsonpath='{.items[0].status.phase}' 2>&1
+        $readyStatus = kubectl get pods -n istio-system -l app=prometheus -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>&1
+        
+        if ($podStatus -eq "Running" -and $readyStatus -eq "True") {
+            # Try to access Prometheus directly via NodePort
+            try {
+                $minikubeIP = kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>&1
+                $response = Invoke-WebRequest -Uri "http://${minikubeIP}:30090/-/ready" -TimeoutSec 5 -ErrorAction SilentlyContinue
+                if ($response.StatusCode -eq 200) {
+                    $ready = $true
+                    Write-Success "Prometheus is ready and responding at http://${minikubeIP}:30090"
+                }
+            }
+            catch {
+                Write-Warning "Prometheus API not yet accessible..."
+            }
+        }
+        
+        if (-not $ready) {
+            $retryCount++
+            if ($retryCount -lt $maxRetries) {
+                Write-Status "Waiting for Prometheus to be ready (Attempt $retryCount of $maxRetries)..."
+                Start-Sleep -Seconds 10
+            }
+        }
+    } while (-not $ready -and $retryCount -lt $maxRetries)
+
+    if (-not $ready) {
+        Write-Warning "Prometheus is not ready after $maxRetries attempts. Check the logs with: kubectl logs -n istio-system -l app=prometheus"
+        Write-Warning "You can still try accessing Prometheus at http://<minikube-ip>:30090"
+    }
+    
+    # Install other Istio addons
+    Write-Status "Installing other Istio addons..."
+    kubectl apply -f "$($istioDir.FullName)\samples\addons\grafana.yaml"
+    kubectl apply -f "$($istioDir.FullName)\samples\addons\jaeger.yaml"
+    kubectl apply -f "$($istioDir.FullName)\samples\addons\kiali.yaml"
+    
+    # Verify monitoring stack
+    Write-Status "Verifying monitoring stack..."
+    $monitoringServices = @(
+        @{ Name = "Prometheus"; Label = "app=prometheus" },
+        @{ Name = "Grafana"; Label = "app=grafana" },
+        @{ Name = "Jaeger"; Label = "app=jaeger" },
+        @{ Name = "Kiali"; Label = "app=kiali" }
+    )
+    
+    foreach ($service in $monitoringServices) {
+        $retryCount = 0
+        $maxRetries = 5
+        $ready = $false
+        
+        do {
+            $status = kubectl get pods -n istio-system -l $service.Label -o jsonpath='{.items[0].status.phase}' 2>&1
+            if ($status -eq "Running") {
+                $ready = $true
+                Write-Success "$($service.Name) is ready"
+            } else {
+                $retryCount++
+                if ($retryCount -lt $maxRetries) {
+                    Write-Status "Waiting for $($service.Name) to be ready (Attempt $retryCount of $maxRetries)..."
+                    Start-Sleep -Seconds 5
+                }
+            }
+        } while (-not $ready -and $retryCount -lt $maxRetries)
+        
+        if (-not $ready) {
+            Write-Warning "$($service.Name) is not ready after $maxRetries attempts"
+        }
+    }
+    
+    Write-Success "Istio setup completed successfully!"
+    return $true
+}
 function Install-Istio {
     Write-Status "Installing Istio service mesh..."
     
-    # Use local istioctl from downloaded Istio
-    $localIstioctl = Join-Path $PSScriptRoot "istio-1.26.2\bin\istioctl.exe"
+    # Use local istioctl from deployment directory
+    $localIstioctl = Join-Path $PSScriptRoot "istioctl.exe"
     
     if (-not (Test-Path $localIstioctl)) {
         Write-Error "Local istioctl not found at: $localIstioctl"
-        Write-Status "Please ensure Istio 1.26.2 is extracted in the istio-1.26.2 directory"
+        Write-Status "Please ensure istioctl.exe is available in the deployment directory"
         return $false
     }
     
@@ -297,7 +635,7 @@ function Install-Istio {
     while ($elapsed -lt $timeout) {
         $istiodPods = kubectl get pods -n istio-system -l app=istiod --no-headers 2>$null
         if ($istiodPods -and $istiodPods -match "Running") {
-            Write-Success "âœ… Istio control plane is ready!"
+            Write-Success "✅ Istio control plane is ready!"
             break
         }
         
@@ -319,7 +657,7 @@ function Install-Istio {
     
     # Verify installation
     if (Test-IstioInstalled) {
-        Write-Success "âœ… Istio service mesh installed successfully!"
+        Write-Success "✅ Istio service mesh installed successfully!"
         return $true
     } else {
         Write-Error "Istio installation verification failed"
@@ -337,22 +675,16 @@ function Install-IstioAddons {
         return $false
     }
     
-    $addonsPath = Join-Path $PSScriptRoot "istio-1.26.2\samples\addons"
-    
-    if (-not (Test-Path $addonsPath)) {
-        Write-Error "Istio addons directory not found: $addonsPath"
-        return $false
-    }
-    
-    # Install Kiali for service mesh visualization (primary Istio addon)
-    Write-Progress "Installing Kiali for service mesh visualization..."
-    $kialiYaml = Join-Path $addonsPath "kiali.yaml"
+    # Install Kiali for service mesh visualization using our custom configuration
+    Write-Progress "Installing Kiali for service mesh visualization (with correct Prometheus URL)..."
+    $kialiYaml = Join-Path $PSScriptRoot "k8s-manifests\kiali.yaml"
     if (Test-Path $kialiYaml) {
         kubectl apply -f $kialiYaml
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to install Kiali"
             return $false
         }
+        Write-Success "✅ Kiali installed with prometheus.credittransfer:9093 configuration"
     } else {
         Write-Error "Kiali YAML not found at: $kialiYaml"
         return $false
@@ -361,37 +693,22 @@ function Install-IstioAddons {
     # Note: We use our own Prometheus, Grafana, and Jaeger from k8s-manifests/monitoring.yaml
     # These provide better integration with our Credit Transfer system
     Write-Status "Note: Using custom Prometheus, Grafana, and Jaeger from monitoring.yaml"
+    Write-Status "Note: Using custom Kiali from k8s-manifests/kiali.yaml with correct Prometheus URL"
     Write-Status "These provide better integration than default Istio addons"
     
     # Wait for Kiali to be ready
     Write-Progress "Waiting for Kiali to be ready..."
     $timeout = 300
     $elapsed = 0
-    $checkInterval = 10
     
-    while ($elapsed -lt $timeout) {
-        $kialiPods = kubectl get pods -n istio-system -l app=kiali --no-headers 2>$null
-        if ($kialiPods -and $kialiPods -match "Running") {
-            Write-Success "âœ… Kiali is ready"
-            break
-        }
-        
-        Start-Sleep -Seconds $checkInterval
-        $elapsed += $checkInterval
-        Write-Host "." -NoNewline -ForegroundColor $Colors.Yellow
-        
-        if ($elapsed % 60 -eq 0) {
-            Write-Host ""
-            Write-Status "[$elapsed/$timeout seconds] Still waiting for Kiali..."
-        }
-    }
+    
     Write-Host ""
     
     if ($elapsed -ge $timeout) {
-        Write-Warning "âš ï¸ Kiali may still be starting up"
+        Write-Warning "⚠️ Kiali may still be starting up"
     }
     
-    Write-Success "âœ… Istio service mesh visualization (Kiali) installed successfully!"
+    Write-Success "✅ Istio service mesh visualization (Kiali) installed successfully!"
     Write-Status "Custom observability stack (Prometheus, Grafana, Jaeger) will be deployed with main manifests"
     return $true
 }
@@ -405,9 +722,9 @@ function Apply-IstioResources {
         Write-Progress "Applying Istio DestinationRules..."
         kubectl apply -f $destinationRulesFile
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "âœ… Istio DestinationRules applied successfully"
+            Write-Success "✅ Istio DestinationRules applied successfully"
         } else {
-            Write-Warning "âš ï¸ Failed to apply some DestinationRules"
+            Write-Warning "⚠️ Failed to apply some DestinationRules"
         }
     }
     
@@ -417,13 +734,13 @@ function Apply-IstioResources {
         Write-Progress "Applying Istio Gateway and VirtualService..."
         kubectl apply -f $gatewayFile
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "âœ… Istio Gateway and VirtualService applied successfully"
+            Write-Success "✅ Istio Gateway and VirtualService applied successfully"
         } else {
-            Write-Warning "âš ï¸ Failed to apply Gateway and VirtualService"
+            Write-Warning "⚠️ Failed to apply Gateway and VirtualService"
         }
     }
     
-    Write-Success "âœ… Istio resources applied successfully!"
+    Write-Success "✅ Istio resources applied successfully!"
 }
 
 function Enable-IstioSidecarInjection {
@@ -434,7 +751,7 @@ function Enable-IstioSidecarInjection {
     kubectl label namespace credittransfer istio-injection=enabled --overwrite
     
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "âœ… Istio sidecar injection enabled for credittransfer namespace"
+        Write-Success "✅ Istio sidecar injection enabled for credittransfer namespace"
     } else {
         Write-Error "Failed to enable sidecar injection"
         return $false
@@ -454,14 +771,12 @@ function Enable-IstioSidecarInjection {
     kubectl rollout restart deployment credittransfer-wcf -n credittransfer
     
     # Wait for rollouts to complete
-    Write-Progress "Waiting for deployments to restart with sidecars..."
-    kubectl rollout status deployment credittransfer-api -n credittransfer --timeout=300s
-    kubectl rollout status deployment credittransfer-wcf -n credittransfer --timeout=300s
+   
     
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "âœ… Deployments restarted with Istio sidecars!"
+        Write-Success "✅ Deployments restarted with Istio sidecars!"
     } else {
-        Write-Warning "âš ï¸ Some deployments may still be restarting"
+        Write-Warning "⚠️ Some deployments may still be restarting"
     }
     
     return $true
@@ -478,13 +793,13 @@ function Verify-IstioSidecarInjection {
     $wcfHasSidecar = $wcfPods -and $wcfPods -match "istio-proxy"
     
     if ($apiHasSidecar -and $wcfHasSidecar) {
-        Write-Success "âœ… Istio sidecars successfully injected into all Credit Transfer pods"
+        Write-Success "✅ Istio sidecars successfully injected into all Credit Transfer pods"
         return $true
     } elseif ($apiHasSidecar -or $wcfHasSidecar) {
-        Write-Warning "âš ï¸ Istio sidecars partially injected (API: $apiHasSidecar, WCF: $wcfHasSidecar)"
+        Write-Warning "⚠️ Istio sidecars partially injected (API: $apiHasSidecar, WCF: $wcfHasSidecar)"
         return $true
     } else {
-        Write-Warning "âš ï¸ No Istio sidecars detected. Pods may still be restarting."
+        Write-Warning "⚠️ No Istio sidecars detected. Pods may still be restarting."
         return $false
     }
 }
@@ -507,7 +822,7 @@ function Install-OpenTelemetryOperator {
         kubectl apply -f "https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml"
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "âœ… OpenTelemetry Operator installed successfully!"
+            Write-Success "✅ OpenTelemetry Operator installed successfully!"
             Write-Status "You can now uncomment the CRDs in k8s-manifests/opentelemetry.yaml if desired"
             return $true
         } else {
@@ -608,11 +923,11 @@ function Enable-DockerDesktopKubernetes {
     Show-KubernetesStatus
     
     Write-Host ""
-    Write-Host "ðŸŽ¯ MANUAL ACTION REQUIRED:" -ForegroundColor $Colors.Yellow
+    Write-Host "🎯 MANUAL ACTION REQUIRED:" -ForegroundColor $Colors.Yellow
     Write-Host "1. Open Docker Desktop (should be starting now...)" -ForegroundColor $Colors.White
-    Write-Host "2. Click the Settings gear icon (âš™ï¸) in the top-right" -ForegroundColor $Colors.White
+    Write-Host "2. Click the Settings gear icon (⚙️) in the top-right" -ForegroundColor $Colors.White
     Write-Host "3. Click 'Kubernetes' in the left sidebar" -ForegroundColor $Colors.White
-    Write-Host "4. Check âœ… 'Enable Kubernetes'" -ForegroundColor $Colors.White
+    Write-Host "4. Check ✅ 'Enable Kubernetes'" -ForegroundColor $Colors.White
     Write-Host "5. Click 'Apply & Restart'" -ForegroundColor $Colors.White
     Write-Host "6. Wait 2-3 minutes for Kubernetes to initialize" -ForegroundColor $Colors.White
     Write-Host "7. You should see 'Kubernetes is running' with a green dot" -ForegroundColor $Colors.White
@@ -671,7 +986,7 @@ function Enable-DockerDesktopKubernetes {
     } else {
         Write-Error "Docker Desktop Kubernetes is still not enabled after $timeout seconds."
         Write-Host ""
-        Write-Host "ðŸ”§ Troubleshooting Tips:" -ForegroundColor $Colors.Yellow
+        Write-Host "🔧 Troubleshooting Tips:" -ForegroundColor $Colors.Yellow
         Write-Host "1. Check if Docker Desktop shows 'Kubernetes is running' with green dot" -ForegroundColor $Colors.White
         Write-Host "2. Try restarting Docker Desktop completely" -ForegroundColor $Colors.White
         Write-Host "3. Check Windows Event Viewer for Docker Desktop errors" -ForegroundColor $Colors.White
@@ -776,18 +1091,18 @@ function Ensure-KubernetesRunning {
         }
     }
     
-    Write-Success "âœ… Docker Desktop Kubernetes is now ready!"
+    Write-Success "✅ Docker Desktop Kubernetes is now ready!"
     Show-KubernetesStatus
     return $true
 }
 
 function Show-Help {
     Write-Host ""
-    Write-Host "ðŸš€ Credit Transfer System - Deployment Management" -ForegroundColor $Colors.Green
-    Write-Host "Enhanced with Istio Service Mesh `& Comprehensive Observability" -ForegroundColor $Colors.Green
+    Write-Host "🚀 Credit Transfer System - Deployment Management" -ForegroundColor $Colors.Green
+    Write-Host "Enhanced with Istio Service Mesh & Comprehensive Observability" -ForegroundColor $Colors.Green
     Write-Host "=============================================================" -ForegroundColor $Colors.Green
     Write-Host ""
-    Write-Host "Usage: .\manage-deployment.ps1 -Action `<action`> [-Service `<service`>] [-SkipKubernetesCheck] [-ConvertToPublic] [-SkipIstio] [-ForcePullImages]" -ForegroundColor $Colors.White
+    Write-Host "Usage: .\manage-deployment.ps1 -Action <action> [-Service <service>] [-SkipKubernetesCheck] [-ConvertToPublic] [-SkipIstio] [-ForcePullImages]" -ForegroundColor $Colors.White
     Write-Host ""
     Write-Host "Actions:" -ForegroundColor $Colors.White
     Write-Host "  status         - Show deployment status (default)" -ForegroundColor $Colors.White
@@ -797,6 +1112,8 @@ function Show-Help {
     Write-Host "  logs           - Show service logs" -ForegroundColor $Colors.White
     Write-Host "  port-forward   - Set up port forwarding (includes observability tools)" -ForegroundColor $Colors.White
     Write-Host "  test           - Run service tests" -ForegroundColor $Colors.White
+    Write-Host "  test-external  - Test external service connectivity (SQL Server, NoBill)" -ForegroundColor $Colors.White
+    Write-Host "  istio-tools    - Start port forwarding for Istio monitoring tools only" -ForegroundColor $Colors.White
     Write-Host "  cleanup        - Clean up deployment" -ForegroundColor $Colors.White
     Write-Host "  setup-keycloak - Run Keycloak setup (use -ConvertToPublic for public client)" -ForegroundColor $Colors.White
     Write-Host "  setup-k8s      - Setup Docker Desktop Kubernetes" -ForegroundColor $Colors.White
@@ -808,6 +1125,7 @@ function Show-Help {
     Write-Host "  all            - All services (default)" -ForegroundColor $Colors.White
     Write-Host "  api            - Credit Transfer API" -ForegroundColor $Colors.White
     Write-Host "  wcf            - Credit Transfer WCF" -ForegroundColor $Colors.White
+    Write-Host "  web            - Credit Transfer Web Handler (XML to REST proxy)" -ForegroundColor $Colors.White
     Write-Host "  keycloak       - Keycloak authentication" -ForegroundColor $Colors.White
     Write-Host "  prometheus     - Prometheus metrics" -ForegroundColor $Colors.White
     Write-Host "  grafana        - Grafana monitoring" -ForegroundColor $Colors.White
@@ -835,47 +1153,49 @@ function Show-Help {
     Write-Host "  .\manage-deployment.ps1 -Action setup-keycloak" -ForegroundColor $Colors.White
     Write-Host "  .\manage-deployment.ps1 -Action setup-keycloak -ConvertToPublic" -ForegroundColor $Colors.White
     Write-Host "  .\manage-deployment.ps1 -Action diagnose" -ForegroundColor $Colors.White
+    Write-Host "  .\manage-deployment.ps1 -Action test-external" -ForegroundColor $Colors.White
+    Write-Host "  .\manage-deployment.ps1 -Action istio-tools" -ForegroundColor $Colors.White
     Write-Host "  .\manage-deployment.ps1 -Action clear-cache" -ForegroundColor $Colors.White
     Write-Host "  .\manage-deployment.ps1 -Action clear-cache -Service all" -ForegroundColor $Colors.White
     Write-Host ""
-    Write-Host "ðŸŽ¯ Observability Features:" -ForegroundColor $Colors.Green
-    Write-Host "  â€¢ Istio Service Mesh with automatic sidecar injection" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Kiali for service mesh topology and health visualization" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ OpenTelemetry for distributed tracing and metrics collection" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Jaeger for end-to-end distributed tracing" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Prometheus for metrics collection and alerting" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Grafana for metrics visualization and dashboards" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Request tracing across all microservices" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Traffic management with circuit breakers and retries" -ForegroundColor $Colors.White
+    Write-Host "🎯 Observability Features:" -ForegroundColor $Colors.Green
+    Write-Host "  • Istio Service Mesh with automatic sidecar injection" -ForegroundColor $Colors.White
+    Write-Host "  • Kiali for service mesh topology and health visualization" -ForegroundColor $Colors.White
+    Write-Host "  • OpenTelemetry for distributed tracing and metrics collection" -ForegroundColor $Colors.White
+    Write-Host "  • Jaeger for end-to-end distributed tracing" -ForegroundColor $Colors.White
+    Write-Host "  • Prometheus for metrics collection and alerting" -ForegroundColor $Colors.White
+    Write-Host "  • Grafana for metrics visualization and dashboards" -ForegroundColor $Colors.White
+    Write-Host "  • Request tracing across all microservices" -ForegroundColor $Colors.White
+    Write-Host "  • Traffic management with circuit breakers and retries" -ForegroundColor $Colors.White
     Write-Host ""
-    Write-Host "ðŸ”§ Automatic Features:" -ForegroundColor $Colors.Green
-    Write-Host "  â€¢ Automatically installs Istio service mesh" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Deploys comprehensive observability stack" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Enables automatic sidecar injection" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Sets up traffic management and fault injection" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Configures distributed tracing with 100% sampling" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Enhanced diagnostics for service mesh issues" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Smart image pulling with policy management" -ForegroundColor $Colors.White
+    Write-Host "🔧 Automatic Features:" -ForegroundColor $Colors.Green
+    Write-Host "  • Automatically installs Istio service mesh" -ForegroundColor $Colors.White
+    Write-Host "  • Deploys comprehensive observability stack" -ForegroundColor $Colors.White
+    Write-Host "  • Enables automatic sidecar injection" -ForegroundColor $Colors.White
+    Write-Host "  • Sets up traffic management and fault injection" -ForegroundColor $Colors.White
+    Write-Host "  • Configures distributed tracing with 100% sampling" -ForegroundColor $Colors.White
+    Write-Host "  • Enhanced diagnostics for service mesh issues" -ForegroundColor $Colors.White
+    Write-Host "  • Smart image pulling with policy management" -ForegroundColor $Colors.White
     Write-Host ""
-    Write-Host "ðŸ–¼ï¸ Image Management:" -ForegroundColor $Colors.Green
-    Write-Host "  â€¢ -ForcePullImages changes imagePullPolicy from 'Never' to 'Always'" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Forces Kubernetes to pull latest Docker images from registry" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Automatically restarts deployments to use new images" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Works with both 'deploy' and 'restart' actions" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Supports individual service updates (-Service api/wcf)" -ForegroundColor $Colors.White
+    Write-Host "🖼️ Image Management:" -ForegroundColor $Colors.Green
+    Write-Host "  • -ForcePullImages changes imagePullPolicy from 'Never' to 'Always'" -ForegroundColor $Colors.White
+    Write-Host "  • Forces Kubernetes to pull latest Docker images from registry" -ForegroundColor $Colors.White
+    Write-Host "  • Automatically restarts deployments to use new images" -ForegroundColor $Colors.White
+    Write-Host "  • Works with both 'deploy' and 'restart' actions" -ForegroundColor $Colors.White
+    Write-Host "  • Supports individual service updates (-Service api/wcf)" -ForegroundColor $Colors.White
     Write-Host ""
-    Write-Host "ðŸ—„ï¸ Cache Management:" -ForegroundColor $Colors.Green
-    Write-Host "  â€¢ clear-cache (default): Clear only CreditTransfer:* application keys" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ clear-cache -Service db: Clear entire database 0" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ clear-cache -Service all: Clear all Redis databases (requires confirmation)" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Automatic Redis health check before clearing cache" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Shows remaining key count after cache operations" -ForegroundColor $Colors.White
+    Write-Host "🗄️ Cache Management:" -ForegroundColor $Colors.Green
+    Write-Host "  • clear-cache (default): Clear only CreditTransfer:* application keys" -ForegroundColor $Colors.White
+    Write-Host "  • clear-cache -Service db: Clear entire database 0" -ForegroundColor $Colors.White
+    Write-Host "  • clear-cache -Service all: Clear all Redis databases (requires confirmation)" -ForegroundColor $Colors.White
+    Write-Host "  • Automatic Redis health check before clearing cache" -ForegroundColor $Colors.White
+    Write-Host "  • Shows remaining key count after cache operations" -ForegroundColor $Colors.White
     Write-Host ""
-    Write-Host "ðŸ'¡ Troubleshooting:" -ForegroundColor $Colors.Yellow
-    Write-Host "  â€¢ If deployment fails: .\manage-deployment.ps1 -Action diagnose" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ For quick operations: add -SkipKubernetesCheck -SkipIstio" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Check service mesh: .\manage-deployment.ps1 -Action observability" -ForegroundColor $Colors.White
-    Write-Host "  â€¢ Access Kiali: .\manage-deployment.ps1 -Action port-forward -Service kiali" -ForegroundColor $Colors.White
+    Write-Host "💡 Troubleshooting:" -ForegroundColor $Colors.Yellow
+    Write-Host "  • If deployment fails: .\manage-deployment.ps1 -Action diagnose" -ForegroundColor $Colors.White
+    Write-Host "  • For quick operations: add -SkipKubernetesCheck -SkipIstio" -ForegroundColor $Colors.White
+    Write-Host "  • Check service mesh: .\manage-deployment.ps1 -Action observability" -ForegroundColor $Colors.White
+    Write-Host "  • Access Kiali: .\manage-deployment.ps1 -Action port-forward -Service kiali" -ForegroundColor $Colors.White
     Write-Host ""
 }
 
@@ -884,92 +1204,92 @@ function Show-Status {
     Write-Host ""
     
     # Check Istio status
-    Write-Host "ðŸ•¸ï¸ Istio Service Mesh Status:" -ForegroundColor $Colors.Yellow
+    Write-Host "🕸️ Istio Service Mesh Status:" -ForegroundColor $Colors.Yellow
     if (Test-IstioInstalled) {
-        Write-Host "  âœ… Istio control plane: Installed" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Istio control plane: Installed" -ForegroundColor $Colors.Green
         kubectl get pods -n istio-system
         Write-Host ""
         
         # Check sidecar injection
         $injectionStatus = kubectl get namespace credittransfer -o jsonpath='{.metadata.labels.istio-injection}' 2>$null
         if ($injectionStatus -eq "enabled") {
-            Write-Host "  âœ… Sidecar injection: Enabled for credittransfer namespace" -ForegroundColor $Colors.Green
+            Write-Host "  ✅ Sidecar injection: Enabled for credittransfer namespace" -ForegroundColor $Colors.Green
         } else {
-            Write-Host "  âš ï¸ Sidecar injection: Not enabled for credittransfer namespace" -ForegroundColor $Colors.Yellow
+            Write-Host "  ⚠️ Sidecar injection: Not enabled for credittransfer namespace" -ForegroundColor $Colors.Yellow
         }
     } else {
-        Write-Host "  âŒ Istio control plane: Not installed" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Istio control plane: Not installed" -ForegroundColor $Colors.Red
     }
     Write-Host ""
     
-    Write-Host "ðŸ"Š Application Pods Status:" -ForegroundColor $Colors.Yellow
+    Write-Host "📊 Application Pods Status:" -ForegroundColor $Colors.Yellow
     kubectl get pods -n credittransfer
     Write-Host ""
     
-    Write-Host "ðŸŒ Service Status:" -ForegroundColor $Colors.Yellow
+    Write-Host "🌐 Service Status:" -ForegroundColor $Colors.Yellow
     kubectl get svc -n credittransfer
     Write-Host ""
     
-    Write-Host "ðŸ"— Istio Configuration:" -ForegroundColor $Colors.Yellow
+    Write-Host "🔗 Istio Configuration:" -ForegroundColor $Colors.Yellow
     kubectl get gateway,virtualservice,destinationrule -n credittransfer
     Write-Host ""
     
     # Check observability components
-    Write-Host "ðŸ'ï¸ Observability Stack Status:" -ForegroundColor $Colors.Yellow
+    Write-Host "👁️ Observability Stack Status:" -ForegroundColor $Colors.Yellow
     
     # Check Kiali
     $kialiPod = kubectl get pods -n istio-system -l app=kiali --no-headers 2>$null
     if ($kialiPod -and $kialiPod -match "Running") {
-        Write-Host "  âœ… Kiali: Running" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Kiali: Running" -ForegroundColor $Colors.Green
     } else {
-        Write-Host "  âŒ Kiali: Not running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Kiali: Not running" -ForegroundColor $Colors.Red
     }
     
     # Check Jaeger
     $jaegerPod = kubectl get pods -n credittransfer -l app=jaeger --no-headers 2>$null
     if ($jaegerPod -and $jaegerPod -match "Running") {
-        Write-Host "  âœ… Jaeger: Running" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Jaeger: Running" -ForegroundColor $Colors.Green
     } else {
         $jaegerPodIstio = kubectl get pods -n istio-system -l app=jaeger --no-headers 2>$null
         if ($jaegerPodIstio -and $jaegerPodIstio -match "Running") {
-            Write-Host "  âœ… Jaeger: Running (in istio-system)" -ForegroundColor $Colors.Green
+            Write-Host "  ✅ Jaeger: Running (in istio-system)" -ForegroundColor $Colors.Green
         } else {
-            Write-Host "  âŒ Jaeger: Not running" -ForegroundColor $Colors.Red
+            Write-Host "  ❌ Jaeger: Not running" -ForegroundColor $Colors.Red
         }
     }
     
     # Check Prometheus
     $prometheusPod = kubectl get pods -n credittransfer -l app=prometheus --no-headers 2>$null
     if ($prometheusPod -and $prometheusPod -match "Running") {
-        Write-Host "  âœ… Prometheus: Running" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Prometheus: Running" -ForegroundColor $Colors.Green
     } else {
         $prometheusPodIstio = kubectl get pods -n istio-system -l app=prometheus --no-headers 2>$null
         if ($prometheusPodIstio -and $prometheusPodIstio -match "Running") {
-            Write-Host "  âœ… Prometheus: Running (in istio-system)" -ForegroundColor $Colors.Green
+            Write-Host "  ✅ Prometheus: Running (in istio-system)" -ForegroundColor $Colors.Green
         } else {
-            Write-Host "  âŒ Prometheus: Not running" -ForegroundColor $Colors.Red
+            Write-Host "  ❌ Prometheus: Not running" -ForegroundColor $Colors.Red
         }
     }
     
     # Check Grafana
     $grafanaPod = kubectl get pods -n credittransfer -l app=grafana --no-headers 2>$null
     if ($grafanaPod -and $grafanaPod -match "Running") {
-        Write-Host "  âœ… Grafana: Running" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Grafana: Running" -ForegroundColor $Colors.Green
     } else {
         $grafanaPodIstio = kubectl get pods -n istio-system -l app=grafana --no-headers 2>$null
         if ($grafanaPodIstio -and $grafanaPodIstio -match "Running") {
-            Write-Host "  âœ… Grafana: Running (in istio-system)" -ForegroundColor $Colors.Green
+            Write-Host "  ✅ Grafana: Running (in istio-system)" -ForegroundColor $Colors.Green
         } else {
-            Write-Host "  âŒ Grafana: Not running" -ForegroundColor $Colors.Red
+            Write-Host "  ❌ Grafana: Not running" -ForegroundColor $Colors.Red
         }
     }
     
     # Check OpenTelemetry Collector
     $otelPod = kubectl get pods -n credittransfer -l app=otel-collector --no-headers 2>$null
     if ($otelPod -and $otelPod -match "Running") {
-        Write-Host "  âœ… OpenTelemetry Collector: Running" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ OpenTelemetry Collector: Running" -ForegroundColor $Colors.Green
     } else {
-        Write-Host "  âŒ OpenTelemetry Collector: Not running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ OpenTelemetry Collector: Not running" -ForegroundColor $Colors.Red
     }
     
     Write-Host ""
@@ -977,23 +1297,23 @@ function Show-Status {
 
 function Show-ObservabilityStatus {
     Write-Host ""
-    Write-Host "ðŸ'ï¸ Observability Stack Status & Access URLs" -ForegroundColor $Colors.Green
+    Write-Host "👁️ Observability Stack Status & Access URLs" -ForegroundColor $Colors.Green
     Write-Host "=============================================" -ForegroundColor $Colors.Green
     Write-Host ""
     
-    Write-Host "ðŸ•¸ï¸ Service Mesh Visualization:" -ForegroundColor $Colors.Yellow
+    Write-Host "🕸️ Service Mesh Visualization:" -ForegroundColor $Colors.Yellow
     $kialiPod = kubectl get pods -n istio-system -l app=kiali --no-headers 2>$null
     if ($kialiPod -and $kialiPod -match "Running") {
-        Write-Host "  âœ… Kiali (Service Mesh Dashboard)" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Kiali (Service Mesh Dashboard)" -ForegroundColor $Colors.Green
         Write-Host "     Access: kubectl port-forward -n istio-system svc/kiali 20001:20001" -ForegroundColor $Colors.White
         Write-Host "     URL: http://localhost:20001/kiali" -ForegroundColor $Colors.Blue
         Write-Host "     Features: Service topology, traffic flow, configuration validation" -ForegroundColor $Colors.White
     } else {
-        Write-Host "  âŒ Kiali: Not running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Kiali: Not running" -ForegroundColor $Colors.Red
     }
     Write-Host ""
     
-    Write-Host "ðŸ"Š Metrics & Monitoring:" -ForegroundColor $Colors.Yellow
+    Write-Host "📊 Metrics & Monitoring:" -ForegroundColor $Colors.Yellow
     
     # Prometheus
     $prometheusPod = kubectl get pods -n istio-system -l app=prometheus --no-headers 2>$null
@@ -1005,12 +1325,12 @@ function Show-ObservabilityStatus {
     }
     
     if ($prometheusPod -and $prometheusPod -match "Running") {
-        Write-Host "  âœ… Prometheus (Metrics Collection)" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Prometheus (Metrics Collection)" -ForegroundColor $Colors.Green
         Write-Host "     Access: kubectl port-forward -n $prometheusNs svc/prometheus 9093:9090" -ForegroundColor $Colors.White
         Write-Host "     URL: http://localhost:9093" -ForegroundColor $Colors.Blue
         Write-Host "     Note: Using port 9093 to avoid Windows port conflicts" -ForegroundColor $Colors.Yellow
     } else {
-        Write-Host "  âŒ Prometheus: Not running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Prometheus: Not running" -ForegroundColor $Colors.Red
     }
     
     # Grafana
@@ -1023,16 +1343,16 @@ function Show-ObservabilityStatus {
     }
     
     if ($grafanaPod -and $grafanaPod -match "Running") {
-        Write-Host "  âœ… Grafana (Metrics Visualization)" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Grafana (Metrics Visualization)" -ForegroundColor $Colors.Green
         Write-Host "     Access: kubectl port-forward -n $grafanaNs svc/grafana 3000:3000" -ForegroundColor $Colors.White
         Write-Host "     URL: http://localhost:3000" -ForegroundColor $Colors.Blue
         Write-Host "     Features: Istio dashboards, service metrics, performance monitoring" -ForegroundColor $Colors.White
     } else {
-        Write-Host "  âŒ Grafana: Not running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Grafana: Not running" -ForegroundColor $Colors.Red
     }
     Write-Host ""
     
-    Write-Host "ðŸ" Distributed Tracing:" -ForegroundColor $Colors.Yellow
+    Write-Host "🔍 Distributed Tracing:" -ForegroundColor $Colors.Yellow
     
     # Jaeger
     $jaegerPod = kubectl get pods -n istio-system -l app=jaeger --no-headers 2>$null
@@ -1044,25 +1364,25 @@ function Show-ObservabilityStatus {
     }
     
     if ($jaegerPod -and $jaegerPod -match "Running") {
-        Write-Host "  âœ… Jaeger (Distributed Tracing)" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Jaeger (Distributed Tracing)" -ForegroundColor $Colors.Green
         Write-Host "     Access: kubectl port-forward -n $jaegerNs svc/jaeger 16686:16686" -ForegroundColor $Colors.White
         Write-Host "     URL: http://localhost:16686" -ForegroundColor $Colors.Blue
         Write-Host "     Features: Request tracing, latency analysis, dependency mapping" -ForegroundColor $Colors.White
     } else {
-        Write-Host "  âŒ Jaeger: Not running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Jaeger: Not running" -ForegroundColor $Colors.Red
     }
     
     # OpenTelemetry Collector
     $otelPod = kubectl get pods -n credittransfer -l app=otel-collector --no-headers 2>$null
     if ($otelPod -and $otelPod -match "Running") {
-        Write-Host "  âœ… OpenTelemetry Collector (Telemetry Pipeline)" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ OpenTelemetry Collector (Telemetry Pipeline)" -ForegroundColor $Colors.Green
         Write-Host "     Features: Telemetry collection, processing, and export" -ForegroundColor $Colors.White
     } else {
-        Write-Host "  âŒ OpenTelemetry Collector: Not running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ OpenTelemetry Collector: Not running" -ForegroundColor $Colors.Red
     }
     Write-Host ""
     
-    Write-Host "ðŸŽ¯ Quick Access Commands:" -ForegroundColor $Colors.Green
+    Write-Host "🎯 Quick Access Commands:" -ForegroundColor $Colors.Green
     Write-Host "  # Service Mesh Visualization" -ForegroundColor $Colors.White
     Write-Host "  .\manage-deployment.ps1 -Action port-forward -Service kiali" -ForegroundColor $Colors.Blue
     Write-Host ""
@@ -1101,49 +1421,90 @@ function Start-Deployment {
     Write-Status "Creating credittransfer namespace..."
     kubectl apply -f k8s-manifests/namespace.yaml
     
-    # Apply main application manifests first
+    # Apply external services FIRST (before main services)
+    Write-Status "Configuring external service integrations..."
+    
+    # Apply external SQL service configuration
+    if (Test-Path "k8s-manifests/external-sql-service.yaml") {
+        Write-Status "Applying external SQL Server service configuration..."
+        kubectl apply -f k8s-manifests/external-sql-service.yaml
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Failed to apply external SQL service. Continuing with deployment..."
+        } else {
+            Write-Success "External SQL Server service configured successfully"
+        }
+    } else {
+        Write-Warning "External SQL service configuration not found. You may need to configure SQL connectivity manually."
+    }
+
+    # Apply external NoBill service configuration 
+   
+
+    # Deploy external services for NoBill integration (additional proxy if needed)
+    if (Test-Path "k8s-manifests/external-services.yaml") {
+        Write-Status "Deploying external services for NoBill integration..."
+        kubectl apply -f k8s-manifests/external-services.yaml
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "External services for NoBill integration deployed"
+        } else {
+            Write-Warning "Failed to deploy external services. NoBill integration may not work."
+        }
+    }
+    
+    # Apply test pod for connectivity testing
+    Write-Status "Deploying test pod for connectivity testing..."
+    kubectl apply -f k8s-manifests/test-pod.yaml
+    
+    # Apply main application manifests AFTER external services are configured
     Write-Status "Applying main Kubernetes manifests..."
     kubectl apply -f k8s-manifests/credittransfer-config.yaml
-    kubectl apply -f k8s-manifests/credittransfer-api.yaml
-    kubectl apply -f k8s-manifests/credittransfer-wcf.yaml
-    kubectl apply -f k8s-manifests/keycloak.yaml
-    kubectl apply -f k8s-manifests/monitoring.yaml
-    kubectl apply -f k8s-manifests/nobill-integration.yaml
-    kubectl apply -f k8s-manifests/opentelemetry.yaml
     kubectl apply -f k8s-manifests/postgres.yaml
     kubectl apply -f k8s-manifests/redis.yaml
-    
+    kubectl apply -f k8s-manifests/keycloak.yaml
+    kubectl apply -f k8s-manifests/credittransfer-api.yaml
+    kubectl apply -f k8s-manifests/credittransfer-wcf.yaml
+    kubectl apply -f k8s-manifests/credittransfer-web.yaml
+    kubectl apply -f k8s-manifests/monitoring.yaml
+    kubectl apply -f k8s-manifests/kiali.yaml
+    kubectl apply -f k8s-manifests/opentelemetry.yaml
+
+
     # Handle force image pull if requested
     if ($ForcePullImages) {
         Write-Status "Force pull images requested - updating image pull policy and restarting services..."
         if (Force-ImagePull -ServiceName "all") {
-            Write-Success "âœ… Successfully updated images with latest versions"
+            Write-Success "✅ Successfully updated images with latest versions"
         } else {
-            Write-Warning "âš ï¸ Image pull completed with some warnings"
+            Write-Warning "⚠️ Image pull completed with some warnings"
         }
     }
+    
+    # Wait for external integrations to be ready
+    Write-Status "Waiting for external service integrations to be ready..."
+    Start-Sleep -Seconds 10
+    
+    # Restart services to pick up external service configurations (CRITICAL STEP!)
+    Write-Status "Restarting services to apply external service configurations..."
+    kubectl rollout restart deployment credittransfer-api -n credittransfer
+    kubectl rollout restart deployment credittransfer-wcf -n credittransfer
+    
+    # Wait for services to be ready after restart
+    Write-Status "Waiting for services to restart with new configurations..."
+    Start-Sleep -Seconds 30
     
     # Wait for core services to be ready before applying Istio resources
     Write-Status "Waiting for core services to be ready..."
     
-    Write-Progress "Waiting for Keycloak..."
-    kubectl wait --for=condition=ready pod -l app=keycloak -n credittransfer --timeout=300s
-    
-    Write-Progress "Waiting for API service..."
-    kubectl wait --for=condition=ready pod -l app=credittransfer-api -n credittransfer --timeout=300s
-    
-    Write-Progress "Waiting for WCF service..."
-    kubectl wait --for=condition=ready pod -l app=credittransfer-wcf -n credittransfer --timeout=300s
-    
+   
     # Apply Istio-specific resources after main services are running
     if (-not $SkipIstio -and (Test-IstioInstalled)) {
         Write-Status "Applying Istio service mesh resources..."
         
         # Enable sidecar injection and restart deployments
         if (Enable-IstioSidecarInjection) {
-            Write-Success "âœ… Istio sidecar injection enabled and deployments restarted"
+            Write-Success "✅ Istio sidecar injection enabled and deployments restarted"
         } else {
-            Write-Warning "âš ï¸ Issues with sidecar injection - service mesh features may be limited"
+            Write-Warning "⚠️ Issues with sidecar injection - service mesh features may be limited"
         }
         
         # Apply Istio networking resources
@@ -1155,18 +1516,14 @@ function Start-Deployment {
     }
     
     # Wait for observability components
-    Write-Progress "Waiting for observability components..."
+
     
-    kubectl wait --for=condition=ready pod -l app=jaeger -n credittransfer --timeout=180s
-    kubectl wait --for=condition=ready pod -l app=prometheus -n credittransfer --timeout=180s
-    kubectl wait --for=condition=ready pod -l app=grafana -n credittransfer --timeout=180s
-    
-    Write-Success "âœ… Deployment completed successfully!"
+    Write-Success "✅ Deployment completed successfully!"
     if ($ForcePullImages) {
-        Write-Success "âœ… All services updated with latest Docker images!"
+        Write-Success "✅ All services updated with latest Docker images!"
     }
     if (-not $SkipIstio -and (Test-IstioInstalled)) {
-        Write-Success "âœ… Istio service mesh is active with sidecar injection enabled!"
+        Write-Success "✅ Istio service mesh is active with sidecar injection enabled!"
     }
     Write-Host ""
     Show-ObservabilityStatus
@@ -1194,7 +1551,7 @@ function Deploy-IstioOnly {
     if ($LASTEXITCODE -eq 0) {
         Write-Status "Enabling Istio sidecar injection for credittransfer namespace..."
         if (Enable-IstioSidecarInjection) {
-            Write-Success "âœ… Istio sidecar injection enabled and services restarted"
+            Write-Success "✅ Istio sidecar injection enabled and services restarted"
         }
         
         # Apply Istio networking resources
@@ -1208,24 +1565,24 @@ function Deploy-IstioOnly {
         kubectl label namespace credittransfer istio-injection=enabled --overwrite 2>$null
     }
     
-    Write-Success "âœ… Istio service mesh and observability stack deployed successfully!"
+    Write-Success "✅ Istio service mesh and observability stack deployed successfully!"
     Write-Host ""
     Show-ObservabilityStatus
 }
 
 function Show-KubernetesStatus {
     Write-Host ""
-    Write-Host "ðŸ"Š Kubernetes & Istio Diagnostics:" -ForegroundColor $Colors.Yellow
+    Write-Host "🔍 Kubernetes & Istio Diagnostics:" -ForegroundColor $Colors.Yellow
     
     # Check Docker Desktop status
     if (Test-DockerDesktopRunning) {
-        Write-Host "  âœ… Docker Desktop: Running" -ForegroundColor $Colors.Green
+        Write-Host "  ✅ Docker Desktop: Running" -ForegroundColor $Colors.Green
     } else {
-        Write-Host "  âŒ Docker Desktop: Not Running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Docker Desktop: Not Running" -ForegroundColor $Colors.Red
     }
     
     # Check available contexts
-    Write-Host "  ðŸ"‹ Available kubectl contexts:" -ForegroundColor $Colors.Blue
+    Write-Host "  📋 Available kubectl contexts:" -ForegroundColor $Colors.Blue
     $contexts = kubectl config get-contexts 2>$null
     if ($contexts) {
         $contexts | ForEach-Object { Write-Host "    $_" -ForegroundColor $Colors.White }
@@ -1236,33 +1593,33 @@ function Show-KubernetesStatus {
     # Check current context
     $currentContext = kubectl config current-context 2>$null
     if ($currentContext) {
-        Write-Host "  ðŸŽ¯ Current context: $currentContext" -ForegroundColor $Colors.Blue
+        Write-Host "  🎯 Current context: $currentContext" -ForegroundColor $Colors.Blue
     } else {
-        Write-Host "  ðŸŽ¯ Current context: None" -ForegroundColor $Colors.Red
+        Write-Host "  🎯 Current context: None" -ForegroundColor $Colors.Red
     }
     
     # Test cluster connectivity
-    Write-Host "  ðŸ"— Cluster connectivity:" -ForegroundColor $Colors.Blue
+    Write-Host "  🔗 Cluster connectivity:" -ForegroundColor $Colors.Blue
     $clusterTest = kubectl cluster-info 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "    âœ… Cluster is accessible" -ForegroundColor $Colors.Green
+        Write-Host "    ✅ Cluster is accessible" -ForegroundColor $Colors.Green
     } else {
-        Write-Host "    âŒ Cannot connect to cluster" -ForegroundColor $Colors.Red
+        Write-Host "    ❌ Cannot connect to cluster" -ForegroundColor $Colors.Red
     }
     
     # Check Istio status
-    Write-Host "  ðŸ•¸ï¸ Istio Service Mesh:" -ForegroundColor $Colors.Blue
+    Write-Host "  🕸️ Istio Service Mesh:" -ForegroundColor $Colors.Blue
     if (Test-IstioInstalled) {
-        Write-Host "    âœ… Istio control plane: Installed" -ForegroundColor $Colors.Green
+        Write-Host "    ✅ Istio control plane: Installed" -ForegroundColor $Colors.Green
         
         # Check Istio version
-        $localIstioctl = Join-Path $PSScriptRoot "istio-1.26.2\bin\istioctl.exe"
+        $localIstioctl = Join-Path $PSScriptRoot "istioctl.exe"
         if (Test-Path $localIstioctl) {
             $istioVersion = & $localIstioctl version --output json 2>$null | ConvertFrom-Json
             if ($istioVersion) {
-                Write-Host "    ðŸ"‹ Client version: $($istioVersion.clientVersion.version)" -ForegroundColor $Colors.White
+                Write-Host "    📋 Client version: $($istioVersion.clientVersion.version)" -ForegroundColor $Colors.White
                 if ($istioVersion.meshVersion) {
-                    Write-Host "    ðŸ"‹ Mesh version: $($istioVersion.meshVersion[0].Info.version)" -ForegroundColor $Colors.White
+                    Write-Host "    📋 Mesh version: $($istioVersion.meshVersion[0].Info.version)" -ForegroundColor $Colors.White
                 }
             }
         }
@@ -1270,12 +1627,12 @@ function Show-KubernetesStatus {
         # Check sidecar injection
         $injectionStatus = kubectl get namespace credittransfer -o jsonpath='{.metadata.labels.istio-injection}' 2>$null
         if ($injectionStatus -eq "enabled") {
-            Write-Host "    âœ… Sidecar injection: Enabled for credittransfer namespace" -ForegroundColor $Colors.Green
+            Write-Host "    ✅ Sidecar injection: Enabled for credittransfer namespace" -ForegroundColor $Colors.Green
         } else {
-            Write-Host "    âš ï¸ Sidecar injection: Not enabled for credittransfer namespace" -ForegroundColor $Colors.Yellow
+            Write-Host "    ⚠️ Sidecar injection: Not enabled for credittransfer namespace" -ForegroundColor $Colors.Yellow
         }
     } else {
-        Write-Host "    âŒ Istio control plane: Not installed" -ForegroundColor $Colors.Red
+        Write-Host "    ❌ Istio control plane: Not installed" -ForegroundColor $Colors.Red
     }
     
     Write-Host ""
@@ -1292,6 +1649,10 @@ function Start-PortForward {
         "wcf" {
             Write-Status "Port forwarding WCF service to localhost:6001..."
             kubectl port-forward -n credittransfer svc/credittransfer-wcf 6001:80
+        }
+        "web" {
+            Write-Status "Port forwarding Web Handler service to localhost:6003..."
+            kubectl port-forward -n credittransfer svc/credittransfer-web 6003:80
         }
         "keycloak" {
             Write-Status "Port forwarding Keycloak to localhost:6002..."
@@ -1380,10 +1741,10 @@ function Start-PortForward {
             Write-Success "All observability port forwards started in background windows"
             Write-Host ""
             Write-Host "Observability Access URLs:" -ForegroundColor $Colors.Yellow
-            Write-Host "  ðŸ•¸ï¸ Kiali (Service Mesh): http://localhost:20001/kiali" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ" Jaeger (Tracing): http://localhost:16686" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ"Š Prometheus (Metrics): http://localhost:9093" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ"ˆ Grafana (Dashboards): http://localhost:3000" -ForegroundColor $Colors.White
+            Write-Host "  🕸️ Kiali (Service Mesh): http://localhost:20001/kiali" -ForegroundColor $Colors.White
+            Write-Host "  🔍 Jaeger (Tracing): http://localhost:16686" -ForegroundColor $Colors.White
+            Write-Host "  📊 Prometheus (Metrics): http://localhost:9093" -ForegroundColor $Colors.White
+            Write-Host "  📈 Grafana (Dashboards): http://localhost:3000" -ForegroundColor $Colors.White
         }
         "all" {
             Write-Status "Starting all port forwards in background..."
@@ -1410,6 +1771,7 @@ function Start-PortForward {
             
             Start-Process powershell -ArgumentList "-Command", "kubectl port-forward -n credittransfer svc/credittransfer-api 6000:80" -WindowStyle Minimized
             Start-Process powershell -ArgumentList "-Command", "kubectl port-forward -n credittransfer svc/credittransfer-wcf 6001:80" -WindowStyle Minimized
+            Start-Process powershell -ArgumentList "-Command", "kubectl port-forward -n credittransfer svc/credittransfer-web 6003:80" -WindowStyle Minimized
             Start-Process powershell -ArgumentList "-Command", "kubectl port-forward -n credittransfer svc/keycloak 6002:8080" -WindowStyle Minimized
             Start-Process powershell -ArgumentList "-Command", "kubectl port-forward -n istio-system svc/kiali 20001:20001" -WindowStyle Minimized
             Start-Process powershell -ArgumentList "-Command", "kubectl port-forward -n $jaegerNs svc/$jaegerSvcName 16686:16686" -WindowStyle Minimized
@@ -1418,19 +1780,20 @@ function Start-PortForward {
             Write-Success "All port forwards started in background windows"
             Write-Host ""
             Write-Host "Application Access URLs:" -ForegroundColor $Colors.Yellow
-            Write-Host "  ðŸŒ API: http://localhost:6000/health" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ"§ WCF: http://localhost:6001/health" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ" Keycloak: http://localhost:6002/admin" -ForegroundColor $Colors.White
+            Write-Host "  🌐 API: http://localhost:6000/health" -ForegroundColor $Colors.White
+            Write-Host "  🔧 WCF: http://localhost:6001/health" -ForegroundColor $Colors.White
+            Write-Host "  🌍 Web Handler: http://localhost:6003/health" -ForegroundColor $Colors.White
+            Write-Host "  🔐 Keycloak: http://localhost:6002/admin" -ForegroundColor $Colors.White
             Write-Host ""
             Write-Host "Observability Access URLs:" -ForegroundColor $Colors.Yellow
-            Write-Host "  ðŸ•¸ï¸ Kiali (Service Mesh): http://localhost:20001/kiali" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ" Jaeger (Tracing): http://localhost:16686" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ"Š Prometheus (Metrics): http://localhost:9093" -ForegroundColor $Colors.White
-            Write-Host "  ðŸ"ˆ Grafana (Dashboards): http://localhost:3000" -ForegroundColor $Colors.White
+            Write-Host "  🕸️ Kiali (Service Mesh): http://localhost:20001/kiali" -ForegroundColor $Colors.White
+            Write-Host "  🔍 Jaeger (Tracing): http://localhost:16686" -ForegroundColor $Colors.White
+            Write-Host "  📊 Prometheus (Metrics): http://localhost:9093" -ForegroundColor $Colors.White
+            Write-Host "  📈 Grafana (Dashboards): http://localhost:3000" -ForegroundColor $Colors.White
         }
         default {
             Write-Error "Unknown service: $ServiceName"
-            Write-Host "Available services: api, wcf, keycloak, prometheus, grafana, jaeger, kiali, otel, redis, observability, all" -ForegroundColor $Colors.Yellow
+            Write-Host "Available services: api, wcf, web, keycloak, prometheus, grafana, jaeger, kiali, otel, redis, observability, all" -ForegroundColor $Colors.Yellow
         }
     }
 }
@@ -1441,9 +1804,9 @@ function Restart-Service {
     if ($ForcePullImages) {
         Write-Status "Restarting services with forced image pull..."
         if (Force-ImagePull -ServiceName $ServiceName) {
-            Write-Success "âœ… Successfully restarted services with latest images"
+            Write-Success "✅ Successfully restarted services with latest images"
         } else {
-            Write-Warning "âš ï¸ Restart completed with some warnings"
+            Write-Warning "⚠️ Restart completed with some warnings"
         }
     } else {
         if ($ServiceName -eq "all") {
@@ -1499,11 +1862,11 @@ function Run-Tests {
     try {
         if ($ConvertToPublic) {
             # Test public client authentication (no client_secret)
-            $body = "grant_type=password&client_id=credittransfer-api&username=admin&password=admin123"
+            $body = 'grant_type=password&client_id=credittransfer-api&username=admin&password=admin123'
             Write-Status "Testing public client authentication (no client_secret)..."
         } else {
             # Test confidential client authentication (with client_secret)
-            $body = "grant_type=password&client_id=credittransfer-api&client_secret=credittransfer-secret-2024&username=admin&password=admin123"
+            $body = 'grant_type=password&client_id=credittransfer-api&client_secret=credittransfer-secret-2024&username=admin&password=admin123'
             Write-Status "Testing confidential client authentication (with client_secret)..."
         }
         
@@ -1553,7 +1916,7 @@ function Remove-Deployment {
         Write-Warning "Do you also want to uninstall Istio service mesh? (y/N)"
         $istioConfirm = Read-Host
         if ($istioConfirm -eq "y" -or $istioConfirm -eq "Y") {
-            $localIstioctl = Join-Path $PSScriptRoot "istio-1.26.2\bin\istioctl.exe"
+            $localIstioctl = Join-Path $PSScriptRoot "istioctl.exe"
             if (Test-Path $localIstioctl) {
                 Write-Status "Uninstalling Istio..."
                 & $localIstioctl uninstall --purge -y
@@ -1597,21 +1960,21 @@ function Clear-RedisCache {
     switch ($ClearType.ToLower()) {
         "app" {
             Write-Status "Clearing application cache keys (CreditTransfer:*)..."
-            $result = kubectl exec -n credittransfer deployment/redis -- redis-cli -a "CreditTransfer2024!" --eval "return redis.call('del', unpack(redis.call('keys', 'CreditTransfer:*')))" 0 2>$null
+            $result = kubectl exec -n credittransfer deployment/redis -- redis-cli -a "CreditTransfer2024!" --eval 'return redis.call("del", unpack(redis.call("keys", "CreditTransfer:*")))' 0 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "âœ… Application cache keys cleared successfully"
+                Write-Success "✅ Application cache keys cleared successfully"
                 Write-Status "Cleared keys matching pattern: CreditTransfer:*"
             } else {
-                Write-Warning "âš ï¸ No application cache keys found to clear"
+                Write-Warning "⚠️ No application cache keys found to clear"
             }
         }
         "db" {
             Write-Status "Clearing database 0 (all keys in current database)..."
             kubectl exec -n credittransfer deployment/redis -- redis-cli -a "CreditTransfer2024!" FLUSHDB
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "âœ… Database 0 cleared successfully"
+                Write-Success "✅ Database 0 cleared successfully"
             } else {
-                Write-Error "âŒ Failed to clear database 0"
+                Write-Error "❌ Failed to clear database 0"
                 return $false
             }
         }
@@ -1622,9 +1985,9 @@ function Clear-RedisCache {
                 Write-Status "Clearing all Redis data..."
                 kubectl exec -n credittransfer deployment/redis -- redis-cli -a "CreditTransfer2024!" FLUSHALL
                 if ($LASTEXITCODE -eq 0) {
-                    Write-Success "âœ… All Redis data cleared successfully"
+                    Write-Success "✅ All Redis data cleared successfully"
                 } else {
-                    Write-Error "âŒ Failed to clear all Redis data"
+                    Write-Error "❌ Failed to clear all Redis data"
                     return $false
                 }
             } else {
@@ -1651,106 +2014,15 @@ function Clear-RedisCache {
 
 # Main execution
 Write-Host ""
-Write-Host "ðŸš€ Credit Transfer System - Deployment Management" -ForegroundColor $Colors.Green
-Write-Host "Enhanced with Istio Service Mesh `& Comprehensive Observability" -ForegroundColor $Colors.Green
-Write-Host "=============================================================" -ForegroundColor $Colors.Green
-Write-Host ""
-Write-Host "Usage: .\manage-deployment.ps1 -Action `<action`> [-Service `<service`>] [-SkipKubernetesCheck] [-ConvertToPublic] [-SkipIstio] [-ForcePullImages]" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "Actions:" -ForegroundColor $Colors.White
-Write-Host "  status         - Show deployment status (default)" -ForegroundColor $Colors.White
-Write-Host "  deploy         - Deploy all services with Istio and observability" -ForegroundColor $Colors.White
-Write-Host "  deploy-istio   - Install Istio service mesh and observability addons" -ForegroundColor $Colors.White
-Write-Host "  restart        - Restart services" -ForegroundColor $Colors.White
-Write-Host "  logs           - Show service logs" -ForegroundColor $Colors.White
-Write-Host "  port-forward   - Set up port forwarding (includes observability tools)" -ForegroundColor $Colors.White
-Write-Host "  test           - Run service tests" -ForegroundColor $Colors.White
-Write-Host "  cleanup        - Clean up deployment" -ForegroundColor $Colors.White
-Write-Host "  setup-keycloak - Run Keycloak setup (use -ConvertToPublic for public client)" -ForegroundColor $Colors.White
-Write-Host "  setup-k8s      - Setup Docker Desktop Kubernetes" -ForegroundColor $Colors.White
-Write-Host "  diagnose       - Show detailed Kubernetes and Istio diagnostics" -ForegroundColor $Colors.White
-Write-Host "  observability  - Show observability stack status and URLs" -ForegroundColor $Colors.White
-Write-Host "  clear-cache    - Clear Redis cache (app keys only, db, or all)" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "Services:" -ForegroundColor $Colors.White
-Write-Host "  all            - All services (default)" -ForegroundColor $Colors.White
-Write-Host "  api            - Credit Transfer API" -ForegroundColor $Colors.White
-Write-Host "  wcf            - Credit Transfer WCF" -ForegroundColor $Colors.White
-Write-Host "  keycloak       - Keycloak authentication" -ForegroundColor $Colors.White
-Write-Host "  prometheus     - Prometheus metrics" -ForegroundColor $Colors.White
-Write-Host "  grafana        - Grafana monitoring" -ForegroundColor $Colors.White
-Write-Host "  jaeger         - Jaeger tracing" -ForegroundColor $Colors.White
-Write-Host "  kiali          - Kiali service mesh visualization" -ForegroundColor $Colors.White
-Write-Host "  otel           - OpenTelemetry collector" -ForegroundColor $Colors.White
-Write-Host "  redis          - Redis cache server" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "Switches:" -ForegroundColor $Colors.White
-Write-Host "  -SkipKubernetesCheck - Skip automatic Kubernetes setup" -ForegroundColor $Colors.White
-Write-Host "  -ConvertToPublic     - Convert Keycloak client to public (no client_secret)" -ForegroundColor $Colors.White
-Write-Host "  -SkipIstio          - Skip Istio installation (for quick operations)" -ForegroundColor $Colors.White
-Write-Host "  -ForcePullImages    - Force pull latest Docker images (changes imagePullPolicy to Always)" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "Examples:" -ForegroundColor $Colors.Yellow
-Write-Host "  .\manage-deployment.ps1 -Action status" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action deploy" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action deploy -ForcePullImages" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action restart -ForcePullImages" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action restart -Service api -ForcePullImages" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action deploy-istio" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action observability" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action port-forward -Service kiali" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action setup-k8s" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action setup-keycloak" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action setup-keycloak -ConvertToPublic" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action diagnose" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action clear-cache" -ForegroundColor $Colors.White
-Write-Host "  .\manage-deployment.ps1 -Action clear-cache -Service all" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "ðŸŽ¯ Observability Features:" -ForegroundColor $Colors.Green
-Write-Host "  â€¢ Istio Service Mesh with automatic sidecar injection" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Kiali for service mesh topology and health visualization" -ForegroundColor $Colors.White
-Write-Host "  â€¢ OpenTelemetry for distributed tracing and metrics collection" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Jaeger for end-to-end distributed tracing" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Prometheus for metrics collection and alerting" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Grafana for metrics visualization and dashboards" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Request tracing across all microservices" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Traffic management with circuit breakers and retries" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "ðŸ"§ Automatic Features:" -ForegroundColor $Colors.Green
-Write-Host "  â€¢ Automatically installs Istio service mesh" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Deploys comprehensive observability stack" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Enables automatic sidecar injection" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Sets up traffic management and fault injection" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Configures distributed tracing with 100% sampling" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Enhanced diagnostics for service mesh issues" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Smart image pulling with policy management" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "ðŸ–¼ï¸ Image Management:" -ForegroundColor $Colors.Green
-Write-Host "  â€¢ -ForcePullImages changes imagePullPolicy from 'Never' to 'Always'" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Forces Kubernetes to pull latest Docker images from registry" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Automatically restarts deployments to use new images" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Works with both 'deploy' and 'restart' actions" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Supports individual service updates (-Service api/wcf)" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "ðŸ—„ï¸ Cache Management:" -ForegroundColor $Colors.Green
-Write-Host "  â€¢ clear-cache (default): Clear only CreditTransfer:* application keys" -ForegroundColor $Colors.White
-Write-Host "  â€¢ clear-cache -Service db: Clear entire database 0" -ForegroundColor $Colors.White
-Write-Host "  â€¢ clear-cache -Service all: Clear all Redis databases (requires confirmation)" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Automatic Redis health check before clearing cache" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Shows remaining key count after cache operations" -ForegroundColor $Colors.White
-Write-Host ""
-Write-Host "ðŸ'¡ Troubleshooting:" -ForegroundColor $Colors.Yellow
-Write-Host "  â€¢ If deployment fails: .\manage-deployment.ps1 -Action diagnose" -ForegroundColor $Colors.White
-Write-Host "  â€¢ For quick operations: add -SkipKubernetesCheck -SkipIstio" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Check service mesh: .\manage-deployment.ps1 -Action observability" -ForegroundColor $Colors.White
-Write-Host "  â€¢ Access Kiali: .\manage-deployment.ps1 -Action port-forward -Service kiali" -ForegroundColor $Colors.White
-Write-Host ""
+Write-Host "🚀 Credit Transfer System - Enhanced Deployment Manager" -ForegroundColor $Colors.Green
+Write-Host "With Istio Service Mesh & Comprehensive Observability" -ForegroundColor $Colors.Green
+Write-Host "====================================================" -ForegroundColor $Colors.Green
 
 # Skip Kubernetes check for help action or if explicitly requested
 if ($Action.ToLower() -ne "help" -and -not $SkipKubernetesCheck) {
     Write-Host ""
     if (-not (Ensure-KubernetesRunning)) {
-        Write-Error "Failed to setup Kubernetes. Use '-SkipKubernetesCheck' to bypass this check."
+        Write-Error "Failed to setup Kubernetes. Use -SkipKubernetesCheck to bypass this check."
         exit 1
     }
     Write-Host ""
@@ -1780,13 +2052,160 @@ switch ($Action.ToLower()) {
             Write-Error "Failed to setup Docker Desktop Kubernetes"
         }
     }
+    "test-external" {
+        Write-Status "Testing external service connectivity..."
+        Write-Host ""
+        
+        # Test if nettest pod exists
+        $nettest = kubectl get pod nettest -n credittransfer 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Status "Creating nettest pod for connectivity testing..."
+            kubectl apply -f k8s-manifests/test-pod.yaml
+            Start-Sleep -Seconds 10
+        }
+        
+        Write-Status "Testing SQL Server connectivity..."
+        $sqlTest = kubectl exec -n credittransfer nettest -- nslookup external-sql-server-direct 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "[OK] SQL Server service (external-sql-server-direct) is resolvable"
+        } else {
+            Write-Error "[FAIL] SQL Server service resolution failed"
+            Write-Host "Details: $sqlTest"
+        }
+        
+        Write-Status "Testing external proxy connectivity..."
+        $proxyTest = kubectl exec -n credittransfer nettest -- nslookup external-proxy 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "[OK] External proxy service is resolvable"
+        } else {
+            Write-Error "[FAIL] External proxy service resolution failed"
+            Write-Host "Details: $proxyTest"
+        }
+        
+        Write-Status "Testing API health endpoint..."
+        Write-Status "Setting up port forwarding to test health endpoint..."
+        
+        # Start port forwarding in background
+        $portForwardJob = Start-Job -ScriptBlock {
+            kubectl port-forward -n credittransfer svc/credittransfer-api 5007:80
+        }
+        
+        Start-Sleep -Seconds 5
+        
+        try {
+            $healthResponse = Invoke-WebRequest -Uri "http://localhost:5007/api/CreditTransfer/health/system" -TimeoutSec 10 -ErrorAction Stop
+            $healthData = $healthResponse.Content | ConvertFrom-Json
+            
+            Write-Success "[OK] Health endpoint is accessible"
+            Write-Host ""
+            Write-Host "System Health Summary:" -ForegroundColor $Colors.Yellow
+            Write-Host "  Overall Status: $($healthData.overallStatus)" -ForegroundColor $(if ($healthData.overallStatus -eq "HEALTHY") { $Colors.Green } elseif ($healthData.overallStatus -eq "DEGRADED") { $Colors.Yellow } else { $Colors.Red })
+            Write-Host "  Health Percentage: $($healthData.summary.overallHealthPercentage)" -ForegroundColor $Colors.Blue
+            Write-Host ""
+            Write-Host "Component Status:" -ForegroundColor $Colors.Yellow
+            
+            foreach ($component in $healthData.components) {
+                $statusColor = $Colors.White
+                if ($component.status -eq "HEALTHY") {
+                    $statusColor = $Colors.Green
+                } elseif ($component.status -eq "DEGRADED") {
+                    $statusColor = $Colors.Yellow
+                } elseif ($component.status -eq "UNHEALTHY") {
+                    $statusColor = $Colors.Red
+                }
+                Write-Host "  - $($component.component): $($component.status)" -ForegroundColor $statusColor
+                Write-Host "    Message: $($component.statusMessage)" -ForegroundColor $Colors.White
+            }
+        }
+        catch {
+            Write-Host "FAIL Health endpoint test failed" -ForegroundColor Red
+        }
+        finally {
+            # Clean up port forwarding
+            Stop-Job $portForwardJob -ErrorAction SilentlyContinue
+            Remove-Job $portForwardJob -ErrorAction SilentlyContinue
+        }
+        Write-Success "External connectivity testing completed!"
+    }
+    "istio-tools" {
+        Write-Status "Starting port forwarding for Istio monitoring tools..."
+        Write-Host ""
+        
+        # Define Istio tool ports with correct labels and service names
+        $istioTools = @(
+            @{
+                Name = "Grafana"
+                ServiceName = "grafana"
+                Namespace = "istio-system"
+                LocalPort = 3000
+                ContainerPort = 3000
+                Description = "Metrics visualization and dashboards"
+                DefaultCredentials = "admin / admin"
+            },
+            @{
+                Name = "Prometheus"
+                ServiceName = "prometheus"
+                Namespace = "istio-system"
+                LocalPort = 9090
+                ContainerPort = 9090
+                Description = "Metrics collection and querying"
+                QueryEndpoint = "/graph"
+            },
+            @{
+                Name = "Kiali"
+                ServiceName = "kiali"
+                Namespace = "istio-system"
+                LocalPort = 20001
+                ContainerPort = 20001
+                Description = "Service mesh observability and management"
+                DefaultCredentials = "admin / admin"
+            },
+            @{
+                Name = "Jaeger"
+                ServiceName = "tracing"
+                Namespace = "istio-system"
+                LocalPort = 16686
+                ContainerPort = 80
+                Description = "Distributed tracing"
+            }
+        )
+        
+        foreach ($tool in $istioTools) {
+            Write-Status "Starting port forward for $($tool.Name)..."
+            Start-Process powershell -ArgumentList "-Command", "kubectl port-forward -n $($tool.Namespace) svc/$($tool.ServiceName) $($tool.LocalPort):$($tool.ContainerPort)" -WindowStyle Minimized
+        }
+        
+        Write-Success "[OK] Port forwarding started for Istio monitoring tools!"
+        Write-Host ""
+        Write-Host "Istio Monitoring Tools:" -ForegroundColor $Colors.Yellow
+        
+        foreach ($tool in $istioTools) {
+            $baseUrl = "http://localhost:$($tool.LocalPort)"
+            
+            Write-Host "  $($tool.Name):" -ForegroundColor $Colors.White
+            Write-Host "    URL: $baseUrl" -ForegroundColor $Colors.Blue
+            Write-Host "    Description: $($tool.Description)" -ForegroundColor $Colors.White
+            
+            if ($tool.DefaultCredentials) {
+                Write-Host "    Default Credentials: $($tool.DefaultCredentials)" -ForegroundColor $Colors.Magenta
+            }
+            if ($tool.QueryEndpoint) {
+                Write-Host "    Query Interface: $baseUrl$($tool.QueryEndpoint)" -ForegroundColor $Colors.Blue
+            }
+            Write-Host ""
+        }
+        
+        Write-Host "Note: Tools will be accessible after port forwarding is established" -ForegroundColor $Colors.Yellow
+        Write-Host "To stop port forwarding, close the minimized PowerShell windows" -ForegroundColor $Colors.Yellow
+        Write-Host ""
+    }
     "diagnose" {
         Write-Host ""
-        Write-Host "ðŸ"Š Comprehensive Kubernetes & Istio Diagnostic Report" -ForegroundColor $Colors.Green
+        Write-Host "🔍 Comprehensive Kubernetes and Istio Diagnostic Report" -ForegroundColor $Colors.Green
         Write-Host "====================================================" -ForegroundColor $Colors.Green
         Show-KubernetesStatus
         
-        Write-Host "ðŸ›ï¸ Manual Commands to Try:" -ForegroundColor $Colors.Yellow
+        Write-Host "🛠️ Manual Commands to Try:" -ForegroundColor $Colors.Yellow
         Write-Host "  # Kubernetes" -ForegroundColor $Colors.White
         Write-Host "  docker info" -ForegroundColor $Colors.White
         Write-Host "  kubectl config get-contexts" -ForegroundColor $Colors.White
@@ -1795,8 +2214,8 @@ switch ($Action.ToLower()) {
         Write-Host "  kubectl get nodes" -ForegroundColor $Colors.White
         Write-Host ""
         Write-Host "  # Istio Service Mesh" -ForegroundColor $Colors.White
-        Write-Host "  istio-1.26.2\bin\istioctl.exe version" -ForegroundColor $Colors.White
-        Write-Host "  istio-1.26.2\bin\istioctl.exe proxy-status" -ForegroundColor $Colors.White
+        Write-Host "  .\istioctl.exe version" -ForegroundColor $Colors.White
+        Write-Host "  .\istioctl.exe proxy-status" -ForegroundColor $Colors.White
         Write-Host "  kubectl get pods -n istio-system" -ForegroundColor $Colors.White
         Write-Host "  kubectl get gateway,virtualservice,destinationrule -n credittransfer" -ForegroundColor $Colors.White
         Write-Host ""

@@ -4,8 +4,29 @@ metadata:
   name: external-sql-server
   namespace: credittransfer
 spec:
-  type: ExternalName
-  externalName: host.minikube.internal
+  ports:
+  - port: 1433
+    targetPort: 1433
+    protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: external-sql-server
+  namespace: credittransfer
+subsets:
+  - addresses:
+      - ip: 10.1.133.31
+    ports:
+      - port: 1433
+---
+# Direct endpoint for SQL Server
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-sql-server-direct
+  namespace: credittransfer
+spec:
   ports:
   - port: 1433
     targetPort: 1433
@@ -17,19 +38,7 @@ metadata:
   name: external-sql-server-direct
   namespace: credittransfer
 subsets:
-- addresses:
-  - ip: 10.1.133.31
-  ports:
-  - port: 1433
-    protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: external-sql-server-direct
-  namespace: credittransfer
-spec:
-  ports:
-  - port: 1433
-    targetPort: 1433
-    protocol: TCP 
+  - addresses:
+      - ip: 10.1.133.31
+    ports:
+      - port: 1433 
