@@ -572,10 +572,10 @@ pipeline {
                             echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
                             
                             if [ $? -ne 0 ]; then
-                                echo "❌ Failed to login to Docker Hub"
+                                    echo "❌ Failed to login to Docker Hub"
                                 echo "🔍 Debug: Username = $DOCKER_USERNAME"
                                 echo "🔍 Debug: Registry = ${DOCKER_REGISTRY:-docker.io}"
-                                exit 1
+                                    exit 1
                             fi
                             
                             echo "✅ Docker login successful"
@@ -633,7 +633,7 @@ pipeline {
                             
                             # Logout from registry
                             echo "🔒 Logging out from Docker registry..."
-                            docker logout
+                                docker logout
                             
                             echo "✅ Docker image push process completed"
                         '''
@@ -663,10 +663,10 @@ pipeline {
         always {
             script {
                 try {
-                    echo "🧹 Performing cleanup tasks"
+                echo "🧹 Performing cleanup tasks"
                     // Only archive if we have a workspace context
                     if (env.WORKSPACE) {
-                        archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
                     } else {
                         echo "⚠️ No workspace context available, skipping artifact archival"
                     }
@@ -683,11 +683,11 @@ pipeline {
                     echo "✅ Pipeline completed successfully! Slack notification sent."
                     
                     if (env.WORKSPACE) {
-                        sh '''#!/bin/bash
-                            echo "Pipeline completed successfully at $(date)" > deployment-status.txt
+                sh '''#!/bin/bash
+                    echo "Pipeline completed successfully at $(date)" > deployment-status.txt
                             echo "Docker images pushed to: https://hub.docker.com/u/dockerhosam" >> deployment-status.txt
-                        '''
-                        archiveArtifacts artifacts: 'deployment-status.txt', allowEmptyArchive: true
+                '''
+                archiveArtifacts artifacts: 'deployment-status.txt', allowEmptyArchive: true
                     }
                 } catch (Exception e) {
                     echo "⚠️ Success notification failed: ${e.getMessage()}"
@@ -702,11 +702,11 @@ pipeline {
                     echo "❌ Pipeline failed! Slack notification sent."
                     
                     if (env.WORKSPACE) {
-                        sh '''#!/bin/bash
-                            echo "Pipeline failed at $(date)" > failure-status.txt
+                sh '''#!/bin/bash
+                    echo "Pipeline failed at $(date)" > failure-status.txt
                             echo "Check build logs for details" >> failure-status.txt
-                        '''
-                        archiveArtifacts artifacts: 'failure-status.txt', allowEmptyArchive: true
+                '''
+                archiveArtifacts artifacts: 'failure-status.txt', allowEmptyArchive: true
                     }
                 } catch (Exception e) {
                     echo "⚠️ Failure notification failed: ${e.getMessage()}"
@@ -805,7 +805,7 @@ def notifySlack(String buildStatus, String message) {
                 contentType: 'APPLICATION_JSON',
                 requestBody: groovy.json.JsonOutput.toJson(slackMessage),
                 validResponseCodes: '200'
-            )
+        )
             echo "✅ Slack notification sent successfully (${response.status})"
         }
     } catch (Exception e) {

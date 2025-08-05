@@ -278,21 +278,20 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🌐 Access SonarQube Results:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**📦 DOWNLOAD RESULTS (Available after job completes):**" >> $GITHUB_STEP_SUMMARY
+        echo "- Go to the **Actions** tab → This workflow run → **Artifacts** section" >> $GITHUB_STEP_SUMMARY
+        echo "- Download: \`sonarqube-analysis-results-${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Contains: metrics.json, issues.json, quality-gate.json, summary.md" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**🌐 ACCESS UI (Manual workflow):**" >> $GITHUB_STEP_SUMMARY
+        echo "- Go to **Actions** → **SonarQube Access - Manual UI Review**" >> $GITHUB_STEP_SUMMARY
+        echo "- Click **Run workflow** → Choose duration (10-60 minutes)" >> $GITHUB_STEP_SUMMARY
+        echo "- Get a public URL to access SonarQube UI directly!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
         echo "**🔴 LIVE ACCESS (While workflow is running):**" >> $GITHUB_STEP_SUMMARY
         echo "- The SonarQube container is running during this job execution" >> $GITHUB_STEP_SUMMARY
         echo "- **Note**: You cannot access it from your browser as it's running inside GitHub Actions" >> $GITHUB_STEP_SUMMARY
         echo "- Results are processed and will be shown in the build logs above" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**💻 View Results Locally:**" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "# Run SonarQube locally to see the same analysis" >> $GITHUB_STEP_SUMMARY
-        echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# Wait 2-3 minutes for startup, then:" >> $GITHUB_STEP_SUMMARY
-        echo "# 1. Access: http://localhost:9000" >> $GITHUB_STEP_SUMMARY
-        echo "# 2. Login: admin/admin" >> $GITHUB_STEP_SUMMARY
-        echo "# 3. Re-run analysis locally with same project key" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
     - name: "🧪 Run Tests"
       run: |
