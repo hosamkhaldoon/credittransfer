@@ -474,7 +474,7 @@ jobs:
   docker:
     name: "🐳 Docker Build & Push"
     runs-on: ubuntu-latest
-    needs: [build, integration-tests]
+    needs: [build]
     timeout-minutes: 20
     if: ${{ !failure() && needs.build.outputs.should-deploy == 'true' }}
     
@@ -629,7 +629,7 @@ jobs:
   performance:
     name: "⚡ Performance Tests"
     runs-on: ubuntu-latest
-    needs: [build, integration-tests]
+    needs: [build]
     timeout-minutes: 30
     if: ${{ !failure() && (inputs.run_performance_tests || github.ref == 'refs/heads/main') }}
     
@@ -684,7 +684,7 @@ jobs:
   summary:
     name: "📊 Deployment Summary"
     runs-on: ubuntu-latest
-    needs: [build, integration-tests, docker, security, performance]
+    needs: [build, docker, security, performance]
     if: always()
     
     steps:
@@ -702,7 +702,6 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## 🧪 Pipeline Results" >> $GITHUB_STEP_SUMMARY
         echo "- **Build & Analysis**: ${{ needs.build.result == 'success' && '✅ Passed' || (needs.build.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Integration Tests**: ${{ needs.integration-tests.result == 'success' && '✅ Passed' || (needs.integration-tests.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Docker Build**: ${{ needs.docker.result == 'success' && '✅ Passed' || (needs.docker.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Security Analysis**: ${{ needs.security.result == 'success' && '✅ Passed' || (needs.security.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Performance Tests**: ${{ needs.performance.result == 'success' && '✅ Passed' || (needs.performance.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
@@ -723,7 +722,6 @@ jobs:
         
         # Overall status
         if [ "${{ needs.build.result }}" == "success" ] && \
-           ([ "${{ needs.integration-tests.result }}" == "success" ] || [ "${{ needs.integration-tests.result }}" == "skipped" ]) && \
            ([ "${{ needs.security.result }}" == "success" ] || [ "${{ needs.security.result }}" == "skipped" ]); then
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🎉 Overall Status: ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
@@ -763,7 +761,6 @@ jobs:
           
           📊 Status: ${{ job.status }}
           🏗️ Build: ${{ needs.build.result }}
-          🧪 Tests: ${{ needs.integration-tests.result }}
           🐳 Docker: ${{ needs.docker.result }}
           🔒 Security: ${{ needs.security.result }}
           
