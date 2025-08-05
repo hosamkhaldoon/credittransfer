@@ -67,6 +67,19 @@ jobs:
       pull-requests: write
       statuses: write
     
+    services:
+      sonarqube:
+        image: sonarqube:10-community
+        ports:
+          - 9000:9000
+        env:
+          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/api/system/status || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
+    
     outputs:
       version: ${{ steps.version.outputs.version }}
       build-number: ${{ steps.version.outputs.build-number }}
@@ -229,10 +242,30 @@ jobs:
         
         echo "✅ SonarQube analysis completed"
         
-        echo "🔗 SonarQube Results Available:"
-        echo "   URL: http://localhost:9000/dashboard?id=$SONAR_PROJECT_KEY"
-        echo "   Project: $SONAR_PROJECT_NAME"
-        echo "   Note: SonarQube container will remain running for the entire workflow"
+        echo "🔗 SonarQube Container Status:"
+        echo "   ✅ SonarQube is running and accessible within this job"
+        echo "   📊 Analysis results uploaded to project: $SONAR_PROJECT_KEY"
+        echo "   ⏰ Container will remain active until this job completes"
+        echo "   🌐 Internal URL: http://localhost:9000/dashboard?id=$SONAR_PROJECT_KEY"
+        echo "   📝 Note: This is only accessible from within the GitHub Actions runner"
+        
+        # Try to fetch quality gate results
+        echo ""
+        echo "🎯 Fetching SonarQube Quality Gate Results..."
+        sleep 10  # Give SonarQube a moment to process
+        
+        # Check quality gate status
+        QUALITY_GATE_STATUS=$(curl -s -u admin:admin "http://localhost:9000/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || echo "UNKNOWN")
+        
+        echo "📊 Quality Gate Status: $QUALITY_GATE_STATUS"
+        
+        if [ "$QUALITY_GATE_STATUS" = "OK" ]; then
+          echo "✅ Quality Gate: PASSED"
+        elif [ "$QUALITY_GATE_STATUS" = "ERROR" ]; then
+          echo "❌ Quality Gate: FAILED"
+        else
+          echo "⏳ Quality Gate: Processing or Unknown"
+        fi
 
     - name: "📊 SonarQube Results Summary"
       if: ${{ inputs.skip_sonarqube != true }}
@@ -244,24 +277,22 @@ jobs:
         echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🌐 Access SonarQube Results:" >> $GITHUB_STEP_SUMMARY
-        echo "The analysis was performed in the GitHub Actions runner. To view results:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Option 1: Run SonarQube locally**" >> $GITHUB_STEP_SUMMARY
+        echo "**🔴 LIVE ACCESS (While workflow is running):**" >> $GITHUB_STEP_SUMMARY
+        echo "- The SonarQube container is running during this job execution" >> $GITHUB_STEP_SUMMARY
+        echo "- **Note**: You cannot access it from your browser as it's running inside GitHub Actions" >> $GITHUB_STEP_SUMMARY
+        echo "- Results are processed and will be shown in the build logs above" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**💻 View Results Locally:**" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "# Stop any existing SonarQube containers" >> $GITHUB_STEP_SUMMARY
-        echo "docker stop sonarqube 2>/dev/null || true" >> $GITHUB_STEP_SUMMARY
-        echo "docker rm sonarqube 2>/dev/null || true" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# Start fresh SonarQube instance" >> $GITHUB_STEP_SUMMARY
+        echo "# Run SonarQube locally to see the same analysis" >> $GITHUB_STEP_SUMMARY
         echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# Wait 2-3 minutes for startup, then access:" >> $GITHUB_STEP_SUMMARY
-        echo "# http://localhost:9000" >> $GITHUB_STEP_SUMMARY
-        echo "# Login: admin/admin" >> $GITHUB_STEP_SUMMARY
+        echo "# Wait 2-3 minutes for startup, then:" >> $GITHUB_STEP_SUMMARY
+        echo "# 1. Access: http://localhost:9000" >> $GITHUB_STEP_SUMMARY
+        echo "# 2. Login: admin/admin" >> $GITHUB_STEP_SUMMARY
+        echo "# 3. Re-run analysis locally with same project key" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Option 2: Re-run analysis locally**" >> $GITHUB_STEP_SUMMARY
-        echo "Re-run the SonarQube scanner against your local instance with the same project key." >> $GITHUB_STEP_SUMMARY
 
     - name: "🧪 Run Tests"
       run: |
@@ -830,13 +861,21 @@ jobs:
         # SonarQube access information
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## 🔍 SonarQube Results Access" >> $GITHUB_STEP_SUMMARY
-        echo "The SonarQube analysis was completed during the build phase." >> $GITHUB_STEP_SUMMARY
-        echo "To view the results, you need to:" >> $GITHUB_STEP_SUMMARY
-        echo "1. Run SonarQube locally: \`docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community\`" >> $GITHUB_STEP_SUMMARY
-        echo "2. Wait for startup (2-3 minutes)" >> $GITHUB_STEP_SUMMARY
-        echo "3. Access: http://localhost:9000" >> $GITHUB_STEP_SUMMARY
-        echo "4. Login: admin/admin" >> $GITHUB_STEP_SUMMARY
-        echo "5. Look for project: **credit-transfer-modern**" >> $GITHUB_STEP_SUMMARY
+        echo "✅ SonarQube analysis completed successfully during the build phase." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 How SonarQube Works in GitHub Actions:" >> $GITHUB_STEP_SUMMARY
+        echo "- **During Build**: SonarQube container runs inside the GitHub Actions runner" >> $GITHUB_STEP_SUMMARY
+        echo "- **Analysis**: Code is analyzed and results are stored in the container" >> $GITHUB_STEP_SUMMARY
+        echo "- **Quality Gate**: Results are checked and reported in the build logs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Container Lifecycle**: Container stops when the build job completes" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 💻 To View Detailed Results Locally:" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
+        echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
+        echo "# Login: admin/admin" >> $GITHUB_STEP_SUMMARY
+        echo "# Re-run analysis with project key: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
     - name: "📧 Notify Slack"
       if: always()
