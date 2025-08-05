@@ -780,7 +780,7 @@ jobs:
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
     - name: "📧 Notify Slack"
-      if: always() && secrets.SLACK_WEBHOOK_URL != ''
+      if: always()
       uses: 8398a7/action-slack@v3
       with:
         status: ${{ job.status }}
@@ -790,21 +790,28 @@ jobs:
       continue-on-error: true
 
     - name: "📧 Notification Fallback"
-      if: always() && secrets.SLACK_WEBHOOK_URL == ''
+      if: always()
       run: |
-        echo "## 📧 Notification Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "🚀 **CreditTransfer.Modern CI/CD Pipeline Complete**" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "📊 **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-        echo "🏗️ **Build**: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "🧪 **Integration Tests**: Skipped (DB issues)" >> $GITHUB_STEP_SUMMARY
-        echo "🐳 **Docker**: ${{ needs.docker.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "🔒 **Security**: ${{ needs.security.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "⚡ **Performance**: ${{ needs.performance.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "📋 **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-        echo "🌿 **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "👤 **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "💡 **Note**: To enable Slack notifications, add SLACK_WEBHOOK_URL to repository secrets" >> $GITHUB_STEP_SUMMARY
+        # Check if Slack webhook is configured
+        if [ -z "$SLACK_WEBHOOK_URL" ]; then
+          echo "## 📧 Notification Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🚀 **CreditTransfer.Modern CI/CD Pipeline Complete**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📊 **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "🏗️ **Build**: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "🧪 **Integration Tests**: Skipped (DB issues)" >> $GITHUB_STEP_SUMMARY
+          echo "🐳 **Docker**: ${{ needs.docker.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "🔒 **Security**: ${{ needs.security.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "⚡ **Performance**: ${{ needs.performance.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📋 **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "🌿 **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "👤 **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Note**: To enable Slack notifications, add SLACK_WEBHOOK_URL to repository secrets" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "✅ Slack notification sent successfully"
+        fi
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
