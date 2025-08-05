@@ -127,7 +127,7 @@ jobs:
           /p:Version=${{ steps.version.outputs.version }}
 
     - name: "🔍 SonarQube Analysis"
-      if: ${{ !inputs.skip_sonarqube && secrets.SONAR_TOKEN != '' }}
+      if: ${{ !inputs.skip_sonarqube && secrets.SONAR_TOKEN }}
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -177,7 +177,7 @@ jobs:
         echo "✅ SonarQube analysis completed"
 
     - name: "⚠️ SonarQube Skipped"
-      if: ${{ !inputs.skip_sonarqube && secrets.SONAR_TOKEN == '' }}
+      if: ${{ !inputs.skip_sonarqube && !secrets.SONAR_TOKEN }}
       run: |
         echo "⚠️ SONAR_TOKEN secret not configured, skipping SonarQube analysis"
         echo "💡 To enable SonarQube:"
