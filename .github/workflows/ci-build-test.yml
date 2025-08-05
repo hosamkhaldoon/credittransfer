@@ -145,15 +145,6 @@ jobs:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
       run: |
-        if [ -z "$SONAR_TOKEN" ]; then
-          echo "⚠️ SONAR_TOKEN secret not configured, skipping SonarQube analysis"
-          echo "💡 To enable SonarQube:"
-          echo "   1. Generate a token in your local SonarQube (User > My Account > Security > Tokens)"
-          echo "   2. Add it as SONAR_TOKEN secret in repository settings"
-          echo "   3. Your local SonarQube is running at: http://localhost:9000"
-          exit 0
-        fi
-        
         echo "⏳ Waiting for SonarQube service to be ready..."
         echo "🔍 This may take up to 3 minutes for SonarQube to fully initialize..."
         
@@ -178,46 +169,31 @@ jobs:
         echo "🔍 Installing SonarQube Scanner..."
         dotnet tool install --global dotnet-sonarscanner || echo "Scanner already installed"
         
-        echo "🔍 Verifying SonarQube connection and creating project if needed..."
-        # Check if project exists, create if not
-        PROJECT_EXISTS=$(curl -s -u admin:admin "http://localhost:9000/api/projects/search?projects=$SONAR_PROJECT_KEY" | grep -o '"total":[0-9]*' | cut -d':' -f2)
+        echo "🔍 Setting up SonarQube project..."
+        # Check if project exists, create if not (using default admin credentials)
+        PROJECT_CHECK=$(curl -s -u admin:admin "http://localhost:9000/api/projects/search?projects=$SONAR_PROJECT_KEY" | grep -o '"total":[0-9]*' | cut -d':' -f2 || echo "0")
         
-        if [ "$PROJECT_EXISTS" = "0" ]; then
+        if [ "$PROJECT_CHECK" = "0" ]; then
           echo "📋 Creating SonarQube project: $SONAR_PROJECT_KEY"
           curl -s -u admin:admin -X POST "http://localhost:9000/api/projects/create" \
             -d "name=$SONAR_PROJECT_NAME" \
-            -d "project=$SONAR_PROJECT_KEY" || echo "Project creation failed or already exists"
-          
-          # Generate a token for the project (using default admin credentials)
-          echo "🔑 Generating SonarQube token..."
-          GENERATED_TOKEN=$(curl -s -u admin:admin -X POST "http://localhost:9000/api/user_tokens/generate" \
-            -d "name=github-actions-token" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-          
-          if [ -n "$GENERATED_TOKEN" ] && [ -z "$SONAR_TOKEN" ]; then
-            echo "✅ Generated token: ${GENERATED_TOKEN:0:10}..."
-            SONAR_TOKEN="$GENERATED_TOKEN"
-          fi
+            -d "project=$SONAR_PROJECT_KEY" || echo "Project creation attempted"
         fi
         
         echo "🚀 Starting SonarQube analysis..."
         cd Migrated
         
-        # Use token if available, otherwise use default admin credentials
-        if [ -n "$SONAR_TOKEN" ]; then
-          echo "🔑 Using provided SONAR_TOKEN for authentication"
-          AUTH_PARAM="/d:sonar.login=$SONAR_TOKEN"
-        else
-          echo "🔑 Using default admin credentials for authentication"
-          AUTH_PARAM="/d:sonar.login=admin /d:sonar.password=admin"
-        fi
+        # Always use admin credentials for simplicity in CI
+        echo "🔑 Using default admin credentials for authentication"
         
-        # Begin analysis
+        # Begin analysis with explicit host URL
         dotnet sonarscanner begin \
           /k:"$SONAR_PROJECT_KEY" \
           /n:"$SONAR_PROJECT_NAME" \
           /v:"${{ steps.version.outputs.version }}" \
-          /d:sonar.host.url="$SONAR_HOST_URL" \
-          $AUTH_PARAM \
+          /d:sonar.host.url="http://localhost:9000" \
+          /d:sonar.login=admin \
+          /d:sonar.password=admin \
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
           /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/TestProject*" \
           /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
@@ -232,28 +208,37 @@ jobs:
           /p:Version=${{ steps.version.outputs.version }}
         
         # Run tests with coverage
-        mkdir -p "../${{ env.COVERAGE_DIR }}"
+        echo "🧪 Running tests with coverage..."
+        mkdir -p "../${{ env.COVERAGE_DIR }}" "../${{ env.TEST_RESULTS_DIR }}"
+        
         dotnet test CreditTransfer.Modern.sln \
           --configuration ${{ env.BUILD_CONFIGURATION }} \
           --no-build \
           --collect:"XPlat Code Coverage" \
           --results-directory "../${{ env.COVERAGE_DIR }}" \
-          --logger "trx;LogFileName=test_results.trx" \
+          --logger "trx;LogFileName=sonar_test_results.trx" \
           --verbosity normal || echo "Tests completed with some failures"
         
+        # Copy coverage files to expected locations
+        echo "📋 Organizing coverage files..."
+        find ../${{ env.COVERAGE_DIR }} -name "*.xml" -type f | while read file; do
+          echo "Found coverage file: $file"
+          cp "$file" "../${{ env.COVERAGE_DIR }}/coverage.opencover.xml" 2>/dev/null || true
+        done
+        
+        # List what we found
+        echo "📊 Coverage files available:"
+        find ../${{ env.COVERAGE_DIR }} -name "*.xml" -type f || echo "No XML coverage files found"
+        
         # End analysis
-        if [ -n "$SONAR_TOKEN" ]; then
-          dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
-        else
-          dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin
-        fi
+        dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin
         
         echo "✅ SonarQube analysis completed"
 
     - name: "🧪 Run Tests"
       run: |
         echo "🧪 Running comprehensive test suite..."
-        mkdir -p "${{ env.TEST_RESULTS_DIR }}"
+        mkdir -p "${{ env.TEST_RESULTS_DIR }}" "${{ env.COVERAGE_DIR }}"
         
         dotnet test "${{ env.SOLUTION_FILE }}" \
           --configuration ${{ env.BUILD_CONFIGURATION }} \
@@ -266,12 +251,36 @@ jobs:
         
         echo "📊 Test results:"
         ls -la "${{ env.TEST_RESULTS_DIR }}" || true
+        find "${{ env.TEST_RESULTS_DIR }}" -name "*.trx" -type f || echo "No TRX files found"
+        
+        echo "📊 Coverage results:"
+        find "${{ env.TEST_RESULTS_DIR }}" -name "*.xml" -type f || echo "No coverage XML files found"
+        
+        # Copy coverage files to standardized location
+        find "${{ env.TEST_RESULTS_DIR }}" -name "coverage.cobertura.xml" -exec cp {} "${{ env.COVERAGE_DIR }}/" \; 2>/dev/null || true
+        find "${{ env.TEST_RESULTS_DIR }}" -name "*.cobertura.xml" -exec cp {} "${{ env.COVERAGE_DIR }}/coverage.cobertura.xml" \; 2>/dev/null || true
+
+    - name: "🔍 Debug Coverage Files"
+      if: always()
+      run: |
+        echo "🔍 Debugging coverage and test files..."
+        echo "Test results directory contents:"
+        find ${{ env.TEST_RESULTS_DIR }} -type f 2>/dev/null || echo "Test results directory not found"
+        echo ""
+        echo "Coverage directory contents:"
+        find ${{ env.COVERAGE_DIR }} -type f 2>/dev/null || echo "Coverage directory not found"
+        echo ""
+        echo "Looking for any coverage files in current directory:"
+        find . -name "*coverage*" -type f 2>/dev/null || echo "No coverage files found"
+        echo ""
+        echo "Looking for any TRX files:"
+        find . -name "*.trx" -type f 2>/dev/null || echo "No TRX files found"
 
     - name: "📊 Generate Coverage Report"
       uses: danielpalme/ReportGenerator-GitHub-Action@5.3.8
       if: always()
       with:
-        reports: '${{ env.TEST_RESULTS_DIR }}/**/coverage.cobertura.xml;${{ env.COVERAGE_DIR }}/**/coverage.cobertura.xml'
+        reports: '${{ env.TEST_RESULTS_DIR }}/**/*.cobertura.xml;${{ env.COVERAGE_DIR }}/**/*.cobertura.xml;${{ env.TEST_RESULTS_DIR }}/**/*coverage*.xml;${{ env.COVERAGE_DIR }}/**/*coverage*.xml'
         targetdir: 'coverage-report'
         reporttypes: 'HtmlInline_AzurePipelines;Cobertura;MarkdownSummaryGithub'
         verbosity: 'Info'
@@ -291,7 +300,7 @@ jobs:
       if: always()
       with:
         name: "Build Test Results"
-        path: "${{ env.TEST_RESULTS_DIR }}/*.trx"
+        path: "${{ env.TEST_RESULTS_DIR }}/**/*.trx"
         reporter: dotnet-trx
 
     - name: "📦 Publish Build Artifacts"
