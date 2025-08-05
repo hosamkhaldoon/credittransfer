@@ -127,11 +127,20 @@ jobs:
           /p:Version=${{ steps.version.outputs.version }}
 
     - name: "🔍 SonarQube Analysis"
-      if: ${{ !inputs.skip_sonarqube && secrets.SONAR_TOKEN }}
+      if: ${{ inputs.skip_sonarqube != true }}
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
       run: |
+        if [ -z "$SONAR_TOKEN" ]; then
+          echo "⚠️ SONAR_TOKEN secret not configured, skipping SonarQube analysis"
+          echo "💡 To enable SonarQube:"
+          echo "   1. Generate a token in your local SonarQube (User > My Account > Security > Tokens)"
+          echo "   2. Add it as SONAR_TOKEN secret in repository settings"
+          echo "   3. Your local SonarQube is running at: http://localhost:9000"
+          exit 0
+        fi
+        
         echo "⏳ Waiting for SonarQube to be ready..."
         timeout 300s bash -c 'until curl -f http://localhost:9000/api/system/status; do sleep 5; done'
         
@@ -175,15 +184,6 @@ jobs:
         dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
         
         echo "✅ SonarQube analysis completed"
-
-    - name: "⚠️ SonarQube Skipped"
-      if: ${{ !inputs.skip_sonarqube && !secrets.SONAR_TOKEN }}
-      run: |
-        echo "⚠️ SONAR_TOKEN secret not configured, skipping SonarQube analysis"
-        echo "💡 To enable SonarQube:"
-        echo "   1. Generate a token in your local SonarQube (User > My Account > Security > Tokens)"
-        echo "   2. Add it as SONAR_TOKEN secret in repository settings"
-        echo "   3. Your local SonarQube is running at: http://localhost:9000"
 
     - name: "🧪 Run Tests"
       run: |
