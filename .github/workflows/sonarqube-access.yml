@@ -116,67 +116,126 @@ jobs:
         echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
         sudo apt update && sudo apt install ngrok
         
-        # Start ngrok tunnel
-        echo "🚀 Creating public tunnel..."
-        ngrok http 9000 --log=stdout > ngrok.log 2>&1 &
-        NGROK_PID=$!
-        
-        # Wait for ngrok to initialize
-        sleep 15
-        
-        # Get public URL
-        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*"' | grep https | cut -d'"' -f4)
-        
-        if [ -n "$NGROK_URL" ]; then
-          echo "🎉 SUCCESS! SonarQube is now publicly accessible!"
-          echo ""
-          echo "🔗 **Access URL**: $NGROK_URL"
-          echo "🔑 **Login**: admin / admin"
-          echo "📊 **Project**: credit-transfer-modern"
-          echo "⏰ **Available for**: ${{ inputs.access_duration }} minutes"
-          echo ""
-          echo "📊 **Quick Links**:"
-          echo "   Dashboard: $NGROK_URL/dashboard?id=credit-transfer-modern"
-          echo "   Issues: $NGROK_URL/project/issues?id=credit-transfer-modern"
-          echo "   Code: $NGROK_URL/code?id=credit-transfer-modern"
-          echo ""
+        # Authenticate ngrok (using repository secret)
+        if [ -n "${{ secrets.NGROK_AUTH_TOKEN }}" ]; then
+          echo "🔑 Authenticating ngrok with provided token..."
+          ngrok config add-authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
           
-          # Save access info to summary
-          echo "## 🎉 SonarQube UI Access Ready!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Access Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **URL**: [$NGROK_URL]($NGROK_URL)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Login**: admin / admin" >> $GITHUB_STEP_SUMMARY
-          echo "- **Project**: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
-          echo "- **Available for**: ${{ inputs.access_duration }} minutes" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Quick Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [Dashboard]($NGROK_URL/dashboard?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-          echo "- [Issues]($NGROK_URL/project/issues?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-          echo "- [Code Analysis]($NGROK_URL/code?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⏰ **This access will automatically close in ${{ inputs.access_duration }} minutes.**" >> $GITHUB_STEP_SUMMARY
+          # Start ngrok tunnel
+          echo "🚀 Creating authenticated public tunnel..."
+          ngrok http 9000 --log=stdout > ngrok.log 2>&1 &
+          NGROK_PID=$!
           
-          # Keep alive for specified duration
+          # Wait for ngrok to initialize
+          sleep 15
+          
+          # Get public URL
+          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*"' | grep https | cut -d'"' -f4)
+          
+          if [ -n "$NGROK_URL" ]; then
+            echo "🎉 SUCCESS! SonarQube is now publicly accessible!"
+            echo ""
+            echo "🔗 **Access URL**: $NGROK_URL"
+            echo "🔑 **Login**: admin / admin"
+            echo "📊 **Project**: credit-transfer-modern"
+            echo "⏰ **Available for**: ${{ inputs.access_duration }} minutes"
+            echo ""
+            echo "📊 **Quick Links**:"
+            echo "   Dashboard: $NGROK_URL/dashboard?id=credit-transfer-modern"
+            echo "   Issues: $NGROK_URL/project/issues?id=credit-transfer-modern"
+            echo "   Code: $NGROK_URL/code?id=credit-transfer-modern"
+            echo ""
+            
+            # Save access info to summary
+            echo "## 🎉 SonarQube UI Access Ready!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔗 Access Information" >> $GITHUB_STEP_SUMMARY
+            echo "- **URL**: [$NGROK_URL]($NGROK_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Login**: admin / admin" >> $GITHUB_STEP_SUMMARY
+            echo "- **Project**: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
+            echo "- **Available for**: ${{ inputs.access_duration }} minutes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📊 Quick Links" >> $GITHUB_STEP_SUMMARY
+            echo "- [Dashboard]($NGROK_URL/dashboard?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
+            echo "- [Issues]($NGROK_URL/project/issues?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
+            echo "- [Code Analysis]($NGROK_URL/code?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⏰ **This access will automatically close in ${{ inputs.access_duration }} minutes.**" >> $GITHUB_STEP_SUMMARY
+            
+            # Keep alive for specified duration
+            DURATION_SECONDS=$(($((${{ inputs.access_duration }})) * 60))
+            echo "⏳ Keeping SonarQube accessible for ${{ inputs.access_duration }} minutes..."
+            echo "🌐 You can now access SonarQube at: $NGROK_URL"
+            
+            # Show countdown
+            for ((i=DURATION_SECONDS; i>0; i--)); do
+              if [ $((i % 60)) -eq 0 ]; then
+                MINUTES=$((i / 60))
+                echo "⏰ $MINUTES minutes remaining..."
+              fi
+              sleep 1
+            done
+            
+            echo "🛑 Access period expired. Closing tunnel..."
+            kill $NGROK_PID 2>/dev/null || true
+          else
+            echo "❌ Failed to create ngrok tunnel"
+            echo "🔍 Checking ngrok logs..."
+            cat ngrok.log || echo "No ngrok logs available"
+            echo "💡 Please check your NGROK_AUTH_TOKEN secret"
+          fi
+        else
+          echo "⚠️ NGROK_AUTH_TOKEN not configured - using alternative method"
+          echo ""
+          echo "## 🔧 Alternative: Local Access Setup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Since ngrok authentication is not configured, here's how to access SonarQube:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Method 1: GitHub Codespaces (Recommended)" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Open this repository in GitHub Codespaces**" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Run the following commands in Codespaces terminal**:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Start SonarQube" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Wait 2-3 minutes, then run your analysis" >> $GITHUB_STEP_SUMMARY
+          echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
+          echo "dotnet tool install --global dotnet-sonarscanner" >> $GITHUB_STEP_SUMMARY
+          echo "dotnet sonarscanner begin /k:\"credit-transfer-modern\" /d:sonar.host.url=\"http://localhost:9000\" /d:sonar.login=admin /d:sonar.password=admin" >> $GITHUB_STEP_SUMMARY
+          echo "dotnet build CreditTransfer.Modern.sln --configuration Release" >> $GITHUB_STEP_SUMMARY
+          echo "dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Access SonarQube UI**: Codespaces will automatically forward port 9000" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Login**: admin / admin" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Method 2: Configure ngrok Authentication" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Add your ngrok auth token to repository secrets**:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Go to **Repository Settings** → **Secrets and variables** → **Actions**" >> $GITHUB_STEP_SUMMARY
+          echo "   - Add secret: \`NGROK_AUTH_TOKEN\` = \`30rvnEsJweNjOYvv3nOb6UGd0Tw_6uXQci89ECdPjSW6jVoEH\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Re-run this workflow** to get a public tunnel" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Method 3: Local Docker Setup" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
+          echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
+          echo "# Login: admin/admin, then run analysis as shown above" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          
+          # Keep SonarQube running for the specified duration anyway
           DURATION_SECONDS=$(($((${{ inputs.access_duration }})) * 60))
-          echo "⏳ Keeping SonarQube accessible for ${{ inputs.access_duration }} minutes..."
-          echo "🌐 You can now access SonarQube at: $NGROK_URL"
+          echo "⏳ Keeping SonarQube container running for ${{ inputs.access_duration }} minutes for local access..."
+          echo "🏠 SonarQube is available locally at: http://localhost:9000 (from within this runner)"
           
           # Show countdown
           for ((i=DURATION_SECONDS; i>0; i--)); do
             if [ $((i % 60)) -eq 0 ]; then
               MINUTES=$((i / 60))
-              echo "⏰ $MINUTES minutes remaining..."
+              echo "⏰ $MINUTES minutes remaining (container will stop after this)"
             fi
             sleep 1
           done
           
-          echo "🛑 Access period expired. Closing tunnel..."
-          kill $NGROK_PID 2>/dev/null || true
-        else
-          echo "❌ Failed to create public tunnel"
-          echo "🔍 Checking ngrok logs..."
-          cat ngrok.log || echo "No ngrok logs available"
+          echo "🛑 Session completed."
         fi
 
     - name: "📋 Final Summary"
