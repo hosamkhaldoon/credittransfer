@@ -60,6 +60,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+      pull-requests: write
+      statuses: write
+    
     services:
       sonarqube:
         image: sonarqube:10-community
@@ -234,6 +241,24 @@ jobs:
         dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin
         
         echo "✅ SonarQube analysis completed"
+        
+        echo "🔗 SonarQube Results Available:"
+        echo "   URL: http://localhost:9000/dashboard?id=$SONAR_PROJECT_KEY"
+        echo "   Project: $SONAR_PROJECT_NAME"
+        echo "   Note: SonarQube container will remain running for the entire workflow"
+
+    - name: "📊 SonarQube Results Summary"
+      if: ${{ inputs.skip_sonarqube != true }}
+      run: |
+        echo "## 🔍 SonarQube Analysis Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Project**: $SONAR_PROJECT_NAME" >> $GITHUB_STEP_SUMMARY
+        echo "- **Project Key**: $SONAR_PROJECT_KEY" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **SonarQube URL**: http://localhost:9000/dashboard?id=$SONAR_PROJECT_KEY" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "ℹ️ **Note**: SonarQube container remains running during this workflow execution." >> $GITHUB_STEP_SUMMARY
+        echo "You can access the results via the URL above while the workflow is active." >> $GITHUB_STEP_SUMMARY
 
     - name: "🧪 Run Tests"
       run: |
@@ -254,9 +279,6 @@ jobs:
         find "${{ env.TEST_RESULTS_DIR }}" -name "*.trx" -type f || echo "No TRX files found"
         
         echo "📊 Coverage results:"
-        find "${{ env.TEST_RESULTS_DIR }}" -name "*.xml" -type f || echo "No coverage XML files found"
-        
-        # Copy coverage files to standardized location
         find "${{ env.TEST_RESULTS_DIR }}" -name "coverage.cobertura.xml" -exec cp {} "${{ env.COVERAGE_DIR }}/" \; 2>/dev/null || true
         find "${{ env.TEST_RESULTS_DIR }}" -name "*.cobertura.xml" -exec cp {} "${{ env.COVERAGE_DIR }}/coverage.cobertura.xml" \; 2>/dev/null || true
 
@@ -297,11 +319,33 @@ jobs:
 
     - name: "📋 Publish Test Results"
       uses: dorny/test-reporter@v1
-      if: always()
+      if: always() && !github.event.pull_request.head.repo.fork
       with:
         name: "Build Test Results"
         path: "${{ env.TEST_RESULTS_DIR }}/**/*.trx"
         reporter: dotnet-trx
+        fail-on-error: false
+      continue-on-error: true
+
+    - name: "📋 Alternative Test Results Summary"
+      if: always()
+      run: |
+        echo "## 🧪 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        
+        # Count test files
+        TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*.trx" 2>/dev/null | wc -l || echo "0")
+        echo "- **Test Result Files Found**: $TRX_COUNT" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "$TRX_COUNT" -gt 0 ]; then
+          echo "- **Status**: ✅ Test results generated successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Test Result Files:" >> $GITHUB_STEP_SUMMARY
+          find ${{ env.TEST_RESULTS_DIR }} -name "*.trx" 2>/dev/null | while read file; do
+            echo "- \`$(basename "$file")\`" >> $GITHUB_STEP_SUMMARY
+          done || true
+        else
+          echo "- **Status**: ⚠️ No test result files found" >> $GITHUB_STEP_SUMMARY
+        fi
 
     - name: "📦 Publish Build Artifacts"
       run: |
@@ -356,14 +400,29 @@ jobs:
     - name: "🚢 Check Deployment Conditions"
       id: deploy-check
       run: |
+        echo "🔍 Deployment Condition Debug:"
+        echo "   github.ref: ${{ github.ref }}"
+        echo "   github.ref_name: ${{ github.ref_name }}"
+        echo "   github.event_name: ${{ github.event_name }}"
+        echo "   inputs.force_docker_push: ${{ inputs.force_docker_push }}"
+        
         SHOULD_DEPLOY="false"
         
-        if [ "${{ github.ref }}" == "refs/heads/main" ] || [ "${{ inputs.force_docker_push }}" == "true" ]; then
+        # Deploy on main branch OR manual force OR workflow_dispatch
+        if [ "${{ github.ref }}" == "refs/heads/main" ] || \
+           [ "${{ inputs.force_docker_push }}" == "true" ] || \
+           [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
           SHOULD_DEPLOY="true"
+          echo "✅ Deployment condition met!"
+        else
+          echo "❌ Deployment conditions not met"
+          echo "💡 To force deployment:"
+          echo "   - Push to main branch, OR"
+          echo "   - Use 'Run workflow' with force_docker_push=true"
         fi
         
         echo "should-deploy=${SHOULD_DEPLOY}" >> $GITHUB_OUTPUT
-        echo "🚢 Should deploy: ${SHOULD_DEPLOY}"
+        echo "🚢 Final decision - Should deploy: ${SHOULD_DEPLOY}"
 
     - name: "📊 Coverage Summary"
       if: always()
@@ -572,9 +631,11 @@ jobs:
     if: ${{ !failure() }}
     
     permissions:
-      security-events: write
       contents: read
       actions: read
+      checks: write
+      pull-requests: write
+      statuses: write
 
     steps:
     - name: "📥 Checkout Code"
