@@ -484,19 +484,35 @@ jobs:
     
     services:
       sql-server:
-        image: mcr.microsoft.com/mssql/server:2022-latest
+        image: mcr.microsoft.com/mssql/server:2019-latest
         env:
-          ACCEPT_EULA: Y
-          SA_PASSWORD: YourStrong@Password123
-          MSSQL_PID: Express
+          ACCEPT_EULA: "Y"
+          SA_PASSWORD: "YourStrong@Password123"
+          MSSQL_PID: "Express"
         ports:
           - 1433:1433
         options: >-
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Password123 -Q 'SELECT 1'"
+          --name sqlserver
+          --hostname sqlserver
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Password123' -Q 'SELECT 1' || exit 1"
           --health-interval 30s
           --health-timeout 10s
+          --health-retries 15
+          --health-start-period 90s
+      
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass123
+          POSTGRES_DB: credittransfer_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U testuser -d credittransfer_test"
+          --health-interval 10s
+          --health-timeout 5s
           --health-retries 10
-          --health-start-period 60s
     
     steps:
     - name: "📥 Checkout Code"
@@ -535,35 +551,90 @@ jobs:
           --no-restore \
           --verbosity minimal
 
-    - name: "🔍 Wait for SQL Server"
+    - name: "🔍 Check Database Services"
       run: |
-        echo "⏳ Waiting for SQL Server to be ready..."
-        for i in {1..30}; do
-          if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT 1" > /dev/null 2>&1; then
+        echo "🔍 Checking database service availability..."
+        
+        # Check SQL Server
+        SQL_SERVER_READY=false
+        echo "⏳ Testing SQL Server connection..."
+        for i in {1..10}; do
+          if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT 1" > /dev/null 2>&1; then
             echo "✅ SQL Server is ready!"
+            SQL_SERVER_READY=true
             break
           fi
-          echo "⏳ Still waiting for SQL Server... (${i}/30)"
+          echo "⏳ SQL Server attempt ${i}/10..."
           sleep 10
         done
         
-        # Show container status for debugging
-        echo "📊 SQL Server container status:"
-        docker ps --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest
+        # Check PostgreSQL
+        POSTGRES_READY=false
+        echo "⏳ Testing PostgreSQL connection..."
+        for i in {1..5}; do
+          if docker exec $(docker ps -q --filter ancestor=postgres:13) pg_isready -U testuser -d credittransfer_test > /dev/null 2>&1; then
+            echo "✅ PostgreSQL is ready!"
+            POSTGRES_READY=true
+            break
+          fi
+          echo "⏳ PostgreSQL attempt ${i}/5..."
+          sleep 5
+        done
         
-        # Test connection with detailed output
-        echo "🔍 Testing SQL Server connection:"
-        docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT @@VERSION" || echo "Connection test failed"
+        # Show container status for debugging
+        echo "📊 Database container status:"
+        docker ps --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest
+        docker ps --filter ancestor=postgres:13
+        
+        # Set environment variables for next steps
+        echo "SQL_SERVER_READY=$SQL_SERVER_READY" >> $GITHUB_ENV
+        echo "POSTGRES_READY=$POSTGRES_READY" >> $GITHUB_ENV
+        
+        if [ "$SQL_SERVER_READY" = "true" ]; then
+          echo "🎯 Using SQL Server for integration tests"
+          echo "DATABASE_TYPE=SQLSERVER" >> $GITHUB_ENV
+        elif [ "$POSTGRES_READY" = "true" ]; then
+          echo "🎯 Using PostgreSQL for integration tests"
+          echo "DATABASE_TYPE=POSTGRES" >> $GITHUB_ENV
+        else
+          echo "⚠️ No database services available, falling back to SQLite"
+          echo "DATABASE_TYPE=SQLITE" >> $GITHUB_ENV
+        fi
 
     - name: "🧪 Run Integration Tests"
       env:
-        ConnectionStrings__DefaultConnection: "Server=localhost,1433;Database=CreditTransferTestDb;User Id=sa;Password=YourStrong@Password123;Connection Timeout=30;TrustServerCertificate=true;"
+        # SQL Server connection (primary)
+        ConnectionStrings__SqlServerConnection: "Server=localhost,1433;Database=CreditTransferTestDb;User Id=sa;Password=YourStrong@Password123;Connection Timeout=30;TrustServerCertificate=true;"
+        # PostgreSQL connection (backup)
+        ConnectionStrings__PostgresConnection: "Host=localhost;Port=5432;Database=credittransfer_test;Username=testuser;Password=testpass123;Connection Timeout=30;"
+        # SQLite connection (fallback)
         ConnectionStrings__SqliteConnection: "Data Source=:memory:"
+        # Default connection based on available database
+        ConnectionStrings__DefaultConnection: >-
+          ${{ env.DATABASE_TYPE == 'SQLSERVER' && 'Server=localhost,1433;Database=CreditTransferTestDb;User Id=sa;Password=YourStrong@Password123;Connection Timeout=30;TrustServerCertificate=true;' ||
+              env.DATABASE_TYPE == 'POSTGRES' && 'Host=localhost;Port=5432;Database=credittransfer_test;Username=testuser;Password=testpass123;Connection Timeout=30;' ||
+              'Data Source=:memory:' }}
         USE_SQLITE_FALLBACK: "true"
         ASPNETCORE_ENVIRONMENT: "Testing"
+        DATABASE_PROVIDER: ${{ env.DATABASE_TYPE }}
       run: |
-        echo "🧪 Running integration tests..."
+        echo "🧪 Running integration tests with $DATABASE_TYPE database..."
         mkdir -p "${{ env.TEST_RESULTS_DIR }}"
+        
+        # Display connection info
+        case "$DATABASE_TYPE" in
+          "SQLSERVER")
+            echo "📊 Using SQL Server 2019 for integration tests"
+            docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT @@VERSION" || echo "SQL Server version check failed"
+            ;;
+          "POSTGRES")
+            echo "📊 Using PostgreSQL 13 for integration tests"
+            docker exec $(docker ps -q --filter ancestor=postgres:13) psql -U testuser -d credittransfer_test -c "SELECT version();" || echo "PostgreSQL version check failed"
+            ;;
+          "SQLITE")
+            echo "📊 Using SQLite in-memory database for integration tests"
+            ;;
+        esac
         
         # Run integration tests with extended timeout
         dotnet test "${{ env.SOLUTION_FILE }}" \
@@ -611,8 +682,10 @@ jobs:
         
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🗄️ Database Configuration:" >> $GITHUB_STEP_SUMMARY
-        echo "- **SQL Server**: mcr.microsoft.com/mssql/server:2022-latest" >> $GITHUB_STEP_SUMMARY
+        echo "- **Primary**: SQL Server 2019 (mcr.microsoft.com/mssql/server:2019-latest)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backup**: PostgreSQL 13 (postgres:13)" >> $GITHUB_STEP_SUMMARY
         echo "- **Fallback**: SQLite in-memory database" >> $GITHUB_STEP_SUMMARY
+        echo "- **Used**: \${{ env.DATABASE_TYPE || 'Unknown' }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Environment**: Testing" >> $GITHUB_STEP_SUMMARY
 
   # Job 3: Docker Build & Push
