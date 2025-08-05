@@ -48,10 +48,10 @@ env:
   DOCKER_NAMESPACE: 'dockerhosam'
   
   # SonarQube Configuration
-  SONAR_HOST_URL: 'http://localhost:9000/'
+  SONAR_HOST_URL: 'http://localhost:9000'  # Local SonarQube instance
   SONAR_PROJECT_KEY: 'credit-transfer-modern'
   SONAR_PROJECT_NAME: "Credit Transfer Modern"
-  SONAR_ORGANIZATION: 'bayondone-org'  # Replace with your SonarCloud organization
+  # SONAR_ORGANIZATION not needed for local SonarQube
 
 jobs:
   # Job 1: Setup and Build
@@ -127,18 +127,13 @@ jobs:
           /p:Version=${{ steps.version.outputs.version }}
 
     - name: "🔍 SonarQube Analysis"
-      if: ${{ !inputs.skip_sonarqube }}
+      if: ${{ !inputs.skip_sonarqube && secrets.SONAR_TOKEN != '' }}
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
       run: |
-        if [ -z "$SONAR_TOKEN" ]; then
-          echo "⚠️ SONAR_TOKEN secret not configured, skipping SonarQube analysis"
-          echo "💡 To enable SonarQube:"
-          echo "   1. Set up project on SonarCloud.io"
-          echo "   2. Add SONAR_TOKEN secret in repository settings"
-          exit 0
-        fi
+        echo "⏳ Waiting for SonarQube to be ready..."
+        timeout 300s bash -c 'until curl -f http://localhost:9000/api/system/status; do sleep 5; done'
         
         echo "🔍 Installing SonarQube Scanner..."
         dotnet tool install --global dotnet-sonarscanner || echo "Scanner already installed"
@@ -146,12 +141,11 @@ jobs:
         echo "🚀 Starting SonarQube analysis..."
         cd Migrated
         
-        # Begin analysis
+        # Begin analysis (removed /o parameter for local SonarQube)
         dotnet sonarscanner begin \
           /k:"$SONAR_PROJECT_KEY" \
           /n:"$SONAR_PROJECT_NAME" \
           /v:"${{ steps.version.outputs.version }}" \
-          /o:"$SONAR_ORGANIZATION" \
           /d:sonar.host.url="$SONAR_HOST_URL" \
           /d:sonar.login="$SONAR_TOKEN" \
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
@@ -181,6 +175,15 @@ jobs:
         dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
         
         echo "✅ SonarQube analysis completed"
+
+    - name: "⚠️ SonarQube Skipped"
+      if: ${{ !inputs.skip_sonarqube && secrets.SONAR_TOKEN == '' }}
+      run: |
+        echo "⚠️ SONAR_TOKEN secret not configured, skipping SonarQube analysis"
+        echo "💡 To enable SonarQube:"
+        echo "   1. Generate a token in your local SonarQube (User > My Account > Security > Tokens)"
+        echo "   2. Add it as SONAR_TOKEN secret in repository settings"
+        echo "   3. Your local SonarQube is running at: http://localhost:9000"
 
     - name: "🧪 Run Tests"
       run: |
