@@ -667,5 +667,4 @@ jobs:
           👤 Actor: ${{ github.actor }}
           
           🔗 View Results: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      continue-on-error: true#   F o r c e   w o r k f l o w   r e c o g n i t i o n  
- 
+      continue-on-error: true
