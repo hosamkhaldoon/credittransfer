@@ -143,82 +143,84 @@ jobs:
             exit 1
           }
           
-          # Create manual analysis script
-          cat > run-sonar-analysis.sh << 'SCRIPT_EOF'
-#!/bin/bash
-echo "🔍 Manual SonarQube Analysis Script"
-echo "=================================="
-
-# Install scanner if not present
-if ! command -v dotnet-sonarscanner &> /dev/null; then
-    echo "📦 Installing SonarScanner..."
-    dotnet tool install --global dotnet-sonarscanner
-fi
-
-# Get version
-VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d)")
-echo "Version: $VERSION"
-
-# Begin analysis
-echo "🚀 Starting SonarQube analysis..."
-dotnet sonarscanner begin \
-  /k:"credit-transfer-modern" \
-  /n:"Credit Transfer Modern" \
-  /v:"$VERSION" \
-  /d:sonar.host.url="https://studious-chainsaw-5g9w67rg9xp52rp5-9000.app.github.dev" \
-  /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
-
-# Build solution
-echo "🔨 Building solution..."
-dotnet build CreditTransfer.Modern.sln --configuration Release
-
-# End analysis
-echo "📊 Completing SonarQube analysis..."
-dotnet sonarscanner end /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
-
-echo "✅ Analysis completed!"
-SCRIPT_EOF
+          # Create manual analysis script using echo statements
+          echo "📁 Creating run-sonar-analysis.sh..."
+          {
+            echo '#!/bin/bash'
+            echo 'echo "🔍 Manual SonarQube Analysis Script"'
+            echo 'echo "=================================="'
+            echo ''
+            echo '# Install scanner if not present'
+            echo 'if ! command -v dotnet-sonarscanner &> /dev/null; then'
+            echo '    echo "📦 Installing SonarScanner..."'
+            echo '    dotnet tool install --global dotnet-sonarscanner'
+            echo 'fi'
+            echo ''
+            echo '# Get version'
+            echo 'VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d)")'
+            echo 'echo "Version: $VERSION"'
+            echo ''
+            echo '# Begin analysis'
+            echo 'echo "🚀 Starting SonarQube analysis..."'
+            echo 'dotnet sonarscanner begin \'
+            echo '  /k:"credit-transfer-modern" \'
+            echo '  /n:"Credit Transfer Modern" \'
+            echo '  /v:"$VERSION" \'
+            echo '  /d:sonar.host.url="https://studious-chainsaw-5g9w67rg9xp52rp5-9000.app.github.dev" \'
+            echo '  /d:sonar.token="YOUR_SONAR_TOKEN_HERE"'
+            echo ''
+            echo '# Build solution'
+            echo 'echo "🔨 Building solution..."'
+            echo 'dotnet build CreditTransfer.Modern.sln --configuration Release'
+            echo ''
+            echo '# End analysis'
+            echo 'echo "📊 Completing SonarQube analysis..."'
+            echo 'dotnet sonarscanner end /d:sonar.token="YOUR_SONAR_TOKEN_HERE"'
+            echo ''
+            echo 'echo "✅ Analysis completed!"'
+          } > run-sonar-analysis.sh
           
           chmod +x run-sonar-analysis.sh
           
-          # Create PowerShell version too
-          cat > run-sonar-analysis.ps1 << 'PS_EOF'
-Write-Host "🔍 Manual SonarQube Analysis Script" -ForegroundColor Cyan
-Write-Host "==================================" -ForegroundColor Cyan
-
-# Install scanner if not present
-if (!(Get-Command "dotnet-sonarscanner" -ErrorAction SilentlyContinue)) {
-    Write-Host "📦 Installing SonarScanner..." -ForegroundColor Yellow
-    dotnet tool install --global dotnet-sonarscanner
-}
-
-# Get version
-try {
-    $VERSION = git rev-parse --short HEAD
-} catch {
-    $VERSION = "manual-$(Get-Date -Format 'yyyyMMdd')"
-}
-Write-Host "Version: $VERSION" -ForegroundColor Green
-
-# Begin analysis
-Write-Host "🚀 Starting SonarQube analysis..." -ForegroundColor Yellow
-dotnet sonarscanner begin `
-  /k:"credit-transfer-modern" `
-  /n:"Credit Transfer Modern" `
-  /v:"$VERSION" `
-  /d:sonar.host.url="https://studious-chainsaw-5g9w67rg9xp52rp5-9000.app.github.dev" `
-  /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
-
-# Build solution
-Write-Host "🔨 Building solution..." -ForegroundColor Yellow
-dotnet build CreditTransfer.Modern.sln --configuration Release
-
-# End analysis
-Write-Host "📊 Completing SonarQube analysis..." -ForegroundColor Yellow
-dotnet sonarscanner end /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
-
-Write-Host "✅ Analysis completed!" -ForegroundColor Green
-PS_EOF
+          # Create PowerShell version using echo statements
+          echo "📁 Creating run-sonar-analysis.ps1..."
+          {
+            echo 'Write-Host "🔍 Manual SonarQube Analysis Script" -ForegroundColor Cyan'
+            echo 'Write-Host "==================================" -ForegroundColor Cyan'
+            echo ''
+            echo '# Install scanner if not present'
+            echo 'if (!(Get-Command "dotnet-sonarscanner" -ErrorAction SilentlyContinue)) {'
+            echo '    Write-Host "📦 Installing SonarScanner..." -ForegroundColor Yellow'
+            echo '    dotnet tool install --global dotnet-sonarscanner'
+            echo '}'
+            echo ''
+            echo '# Get version'
+            echo 'try {'
+            echo '    $VERSION = git rev-parse --short HEAD'
+            echo '} catch {'
+            echo '    $VERSION = "manual-$(Get-Date -Format '"'"'yyyyMMdd'"'"')"'
+            echo '}'
+            echo 'Write-Host "Version: $VERSION" -ForegroundColor Green'
+            echo ''
+            echo '# Begin analysis'
+            echo 'Write-Host "🚀 Starting SonarQube analysis..." -ForegroundColor Yellow'
+            echo 'dotnet sonarscanner begin `'
+            echo '  /k:"credit-transfer-modern" `'
+            echo '  /n:"Credit Transfer Modern" `'
+            echo '  /v:"$VERSION" `'
+            echo '  /d:sonar.host.url="https://studious-chainsaw-5g9w67rg9xp52rp5-9000.app.github.dev" `'
+            echo '  /d:sonar.token="YOUR_SONAR_TOKEN_HERE"'
+            echo ''
+            echo '# Build solution'
+            echo 'Write-Host "🔨 Building solution..." -ForegroundColor Yellow'
+            echo 'dotnet build CreditTransfer.Modern.sln --configuration Release'
+            echo ''
+            echo '# End analysis'
+            echo 'Write-Host "📊 Completing SonarQube analysis..." -ForegroundColor Yellow'
+            echo 'dotnet sonarscanner end /d:sonar.token="YOUR_SONAR_TOKEN_HERE"'
+            echo ''
+            echo 'Write-Host "✅ Analysis completed!" -ForegroundColor Green'
+          } > run-sonar-analysis.ps1
           
           cd ..
           
