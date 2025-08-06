@@ -49,44 +49,7 @@ jobs:
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: "⏳ Wait for SonarQube to Start"
-      run: |
-        echo "⏳ Waiting for SonarQube to be ready..."
-        for i in {1..60}; do
-          if curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
-            echo "✅ SonarQube is ready!"
-            break
-          fi
-          echo "⏳ Still starting up... (${i}/60)"
-          sleep 5
-        done
-
-    - name: "🔐 Configure SonarQube Authentication"
-      run: |
-        echo "🔐 Configuring SonarQube authentication..."
-        
-        # Wait a bit more for SonarQube to be fully ready
-        sleep 10
-        
-        # Change admin password from default 'admin' to 'admin123' to avoid forced password change
-        echo "🔑 Setting permanent admin password..."
-        curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
-          -d "login=admin" \
-          -d "password=admin123" \
-          -d "previousPassword=admin" || echo "Password already changed or failed to change"
-        
-        # Verify the new password works
-        sleep 2
-        if curl -s -u admin:admin123 "http://localhost:9000/api/system/status" | grep -q "UP"; then
-          echo "✅ New password verified successfully"
-          echo "SONAR_LOGIN=admin" >> $GITHUB_ENV
-          echo "SONAR_PASSWORD=admin123" >> $GITHUB_ENV
-        else
-          echo "⚠️ New password not working, using default"
-          echo "SONAR_LOGIN=admin" >> $GITHUB_ENV
-          echo "SONAR_PASSWORD=admin" >> $GITHUB_ENV
-        fi
-
+   
     - name: "🔍 Run Fresh Analysis"
       if: ${{ inputs.run_analysis }}
       run: |
