@@ -507,11 +507,11 @@ jobs:
           - 1433:1433
         options: >-
           --name sqlserver
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Password123' -Q 'SELECT 1' || exit 1"
-          --health-interval 45s
-          --health-timeout 15s
-          --health-retries 8
-          --health-start-period 120s
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Password123' -Q 'SELECT 1' -b || exit 1"
+          --health-interval 30s
+          --health-timeout 30s
+          --health-retries 12
+          --health-start-period 180s
     
     steps:
     - name: "📥 Checkout Code"
@@ -554,6 +554,11 @@ jobs:
       run: |
         echo "🔍 Checking database service availability..."
         
+        # Show initial container status
+        echo "📊 Database container status:"
+        docker ps --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "No SQL Server containers"
+        docker ps --filter ancestor=postgres:13 --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "No PostgreSQL containers"
+        
         # Check PostgreSQL first (faster startup)
         POSTGRES_READY=false
         echo "⏳ Testing PostgreSQL connection..."
@@ -571,23 +576,26 @@ jobs:
         SQL_SERVER_READY=false
         if [ "$POSTGRES_READY" = "false" ]; then
           echo "⏳ Testing SQL Server connection..."
-          for i in {1..5}; do
-            if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT 1" > /dev/null 2>&1; then
+          
+          # Check SQL Server health status first
+          SQL_CONTAINER_ID=$(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest)
+          if [ -n "$SQL_CONTAINER_ID" ]; then
+            echo "📊 SQL Server container health: $(docker inspect --format='{{.State.Health.Status}}' $SQL_CONTAINER_ID)"
+            echo "📊 SQL Server container state: $(docker inspect --format='{{.State.Status}}' $SQL_CONTAINER_ID)"
+          fi
+          
+          for i in {1..10}; do
+            if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT 1" -b > /dev/null 2>&1; then
               echo "✅ SQL Server is ready!"
               SQL_SERVER_READY=true
               break
             fi
-            echo "⏳ SQL Server attempt ${i}/5..."
-            sleep 5
+            echo "⏳ SQL Server attempt ${i}/10..."
+            sleep 15
           done
         else
           echo "ℹ️ Skipping SQL Server check (PostgreSQL is available)"
         fi
-        
-        # Show container status for debugging
-        echo "📊 Database container status:"
-        docker ps --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest || echo "No SQL Server containers"
-        docker ps --filter ancestor=postgres:13 || echo "No PostgreSQL containers"
         
         # Set environment variables for next steps
         echo "SQL_SERVER_READY=$SQL_SERVER_READY" >> $GITHUB_ENV
