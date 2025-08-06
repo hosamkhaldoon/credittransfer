@@ -42,11 +42,15 @@ jobs:
           - 9000:9000
         env:
           SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
+          SONAR_JDBC_URL: jdbc:h2:mem:sonarqube
+          SONAR_WEB_JAVAADDITIONALOPTS: -Xmx512m
+          SONAR_CE_JAVAADDITIONALOPTS: -Xmx512m
         options: >-
           --health-cmd "curl -f http://localhost:9000/api/system/status || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 10
+          --health-interval 45s
+          --health-timeout 30s
+          --health-retries 15
+          --health-start-period 120s
     
     steps:
     - name: "📥 Checkout Code"
@@ -61,15 +65,51 @@ jobs:
 
     - name: "⏳ Wait for SonarQube to Start"
       run: |
-        echo "⏳ Waiting for SonarQube to be ready..."
-        for i in {1..60}; do
+        echo "⏳ Waiting for SonarQube to be ready (this may take 3-5 minutes)..."
+        echo "📊 SonarQube startup typically requires significant memory and time"
+        
+        # First, let's check if the container is running
+        sleep 30
+        echo "🔍 Checking container status..."
+        docker ps | grep sonarqube || echo "No SonarQube container found yet"
+        
+        # Check logs for any immediate errors
+        echo "📋 Recent SonarQube logs:"
+        docker logs $(docker ps -q --filter ancestor=sonarqube:lts-community) --tail 10 || echo "Could not fetch logs yet"
+        
+        # Wait with more patience and better feedback
+        for i in {1..120}; do
           if curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
             echo "✅ SonarQube is ready!"
+            echo "📊 Final status check:"
+            curl -s http://localhost:9000/api/system/status || echo "Status check failed"
             break
           fi
-          echo "⏳ Still starting up... (${i}/60)"
+          
+          # Every 30 seconds, show progress and logs
+          if [ $((i % 30)) -eq 0 ]; then
+            MINUTES=$((i / 60))
+            echo "⏳ Still starting up... (${i}/120 - ${MINUTES} minutes elapsed)"
+            echo "🔍 Container status:"
+            docker ps | grep sonarqube || echo "Container not found"
+            echo "📋 Latest logs:"
+            docker logs $(docker ps -q --filter ancestor=sonarqube:lts-community) --tail 5 2>/dev/null || echo "Could not fetch logs"
+            echo "💾 Memory usage:"
+            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep sonarqube || echo "Stats not available"
+          fi
+          
           sleep 5
         done
+        
+        # Final check
+        if ! curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
+          echo "❌ SonarQube failed to start within 10 minutes"
+          echo "📋 Full container logs:"
+          docker logs $(docker ps -q --filter ancestor=sonarqube:lts-community) || echo "Could not fetch logs"
+          echo "🔍 Final container status:"
+          docker ps -a | grep sonarqube || echo "No container found"
+          exit 1
+        fi
 
     - name: "🔐 Configure SonarQube Authentication"
       run: |
