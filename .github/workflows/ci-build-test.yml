@@ -190,17 +190,24 @@ jobs:
         echo "🚀 Starting SonarQube analysis..."
         cd Migrated
         
-        # Always use admin credentials for simplicity in CI
-        echo "🔑 Using default admin credentials for authentication"
+        # Set permanent password for consistency
+        echo "🔐 Setting consistent admin password..."
+        curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
+          -d "login=admin" \
+          -d "password=admin123" \
+          -d "previousPassword=admin" || echo "Password already changed"
         
-        # Begin analysis with explicit host URL
+        # Always use admin123 for simplicity in CI
+        echo "🔑 Using consistent admin credentials for authentication"
+        
+        # Begin analysis with consistent credentials
         dotnet sonarscanner begin \
           /k:"$SONAR_PROJECT_KEY" \
           /n:"$SONAR_PROJECT_NAME" \
           /v:"${{ steps.version.outputs.version }}" \
           /d:sonar.host.url="http://localhost:9000" \
           /d:sonar.login=admin \
-          /d:sonar.password=admin \
+          /d:sonar.password=admin123 \
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
           /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/TestProject*" \
           /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
@@ -238,7 +245,7 @@ jobs:
         find ../${{ env.COVERAGE_DIR }} -name "*.xml" -type f || echo "No XML coverage files found"
         
         # End analysis
-        dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin
+        dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin123
         
         echo "✅ SonarQube analysis completed"
         
@@ -978,12 +985,12 @@ jobs:
         echo "- **Container Lifecycle**: Container stops when the build job completes" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 💻 To View Detailed Results Locally:" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "```bash" >> $GITHUB_STEP_SUMMARY
         echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
         echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
-        echo "# Login: admin/admin" >> $GITHUB_STEP_SUMMARY
+        echo "# Login: admin/admin123" >> $GITHUB_STEP_SUMMARY
         echo "# Re-run analysis with project key: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "```" >> $GITHUB_STEP_SUMMARY
 
     - name: "📧 Notify Slack"
       if: always()

@@ -71,6 +71,32 @@ jobs:
           sleep 5
         done
 
+    - name: "🔐 Configure SonarQube Authentication"
+      run: |
+        echo "🔐 Configuring SonarQube authentication..."
+        
+        # Wait a bit more for SonarQube to be fully ready
+        sleep 10
+        
+        # Change admin password from default 'admin' to 'admin123' to avoid forced password change
+        echo "🔑 Setting permanent admin password..."
+        curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
+          -d "login=admin" \
+          -d "password=admin123" \
+          -d "previousPassword=admin" || echo "Password already changed or failed to change"
+        
+        # Verify the new password works
+        sleep 2
+        if curl -s -u admin:admin123 "http://localhost:9000/api/system/status" | grep -q "UP"; then
+          echo "✅ New password verified successfully"
+          echo "SONAR_LOGIN=admin" >> $GITHUB_ENV
+          echo "SONAR_PASSWORD=admin123" >> $GITHUB_ENV
+        else
+          echo "⚠️ New password not working, using default"
+          echo "SONAR_LOGIN=admin" >> $GITHUB_ENV
+          echo "SONAR_PASSWORD=admin" >> $GITHUB_ENV
+        fi
+
     - name: "🔍 Run Fresh Analysis"
       if: ${{ inputs.run_analysis }}
       run: |
@@ -80,10 +106,10 @@ jobs:
         dotnet tool install --global dotnet-sonarscanner || echo "Scanner already installed"
         
         # Create project if not exists
-        PROJECT_CHECK=$(curl -s -u admin:admin "http://localhost:9000/api/projects/search?projects=$SONAR_PROJECT_KEY" | grep -o '"total":[0-9]*' | cut -d':' -f2 || echo "0")
+        PROJECT_CHECK=$(curl -s -u $SONAR_LOGIN:$SONAR_PASSWORD "http://localhost:9000/api/projects/search?projects=$SONAR_PROJECT_KEY" | grep -o '"total":[0-9]*' | cut -d':' -f2 || echo "0")
         if [ "$PROJECT_CHECK" = "0" ]; then
           echo "📋 Creating SonarQube project..."
-          curl -s -u admin:admin -X POST "http://localhost:9000/api/projects/create" \
+          curl -s -u $SONAR_LOGIN:$SONAR_PASSWORD -X POST "http://localhost:9000/api/projects/create" \
             -d "name=$SONAR_PROJECT_NAME" \
             -d "project=$SONAR_PROJECT_KEY" || echo "Project creation attempted"
         fi
@@ -97,12 +123,12 @@ jobs:
           /n:"$SONAR_PROJECT_NAME" \
           /v:"$VERSION" \
           /d:sonar.host.url="$SONAR_HOST_URL" \
-          /d:sonar.login=admin \
-          /d:sonar.password=admin
+          /d:sonar.login=$SONAR_LOGIN \
+          /d:sonar.password=$SONAR_PASSWORD
         
         dotnet build CreditTransfer.Modern.sln --configuration Release --verbosity minimal
         
-        dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin
+        dotnet sonarscanner end /d:sonar.login=$SONAR_LOGIN /d:sonar.password=$SONAR_PASSWORD
         
         cd ..
         echo "✅ Analysis completed!"
@@ -136,7 +162,7 @@ jobs:
             echo "🎉 SUCCESS! SonarQube is now publicly accessible!"
             echo ""
             echo "🔗 **Access URL**: $NGROK_URL"
-            echo "🔑 **Login**: admin / admin"
+            echo "🔑 **Login**: admin / admin123"
             echo "📊 **Project**: credit-transfer-modern"
             echo "⏰ **Available for**: ${{ inputs.access_duration }} minutes"
             echo ""
@@ -151,7 +177,7 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🔗 Access Information" >> $GITHUB_STEP_SUMMARY
             echo "- **URL**: [$NGROK_URL]($NGROK_URL)" >> $GITHUB_STEP_SUMMARY
-            echo "- **Login**: admin / admin" >> $GITHUB_STEP_SUMMARY
+            echo "- **Login**: admin / admin123" >> $GITHUB_STEP_SUMMARY
             echo "- **Project**: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
             echo "- **Available for**: ${{ inputs.access_duration }} minutes" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -201,12 +227,12 @@ jobs:
           echo "# Wait 2-3 minutes, then run your analysis" >> $GITHUB_STEP_SUMMARY
           echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
           echo "dotnet tool install --global dotnet-sonarscanner" >> $GITHUB_STEP_SUMMARY
-          echo "dotnet sonarscanner begin /k:\"credit-transfer-modern\" /d:sonar.host.url=\"http://localhost:9000\" /d:sonar.login=admin /d:sonar.password=admin" >> $GITHUB_STEP_SUMMARY
+          echo "dotnet sonarscanner begin /k:\"credit-transfer-modern\" /d:sonar.host.url=\"http://localhost:9000\" /d:sonar.login=admin /d:sonar.password=admin123" >> $GITHUB_STEP_SUMMARY
           echo "dotnet build CreditTransfer.Modern.sln --configuration Release" >> $GITHUB_STEP_SUMMARY
-          echo "dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin" >> $GITHUB_STEP_SUMMARY
+          echo "dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin123" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "3. **Access SonarQube UI**: Codespaces will automatically forward port 9000" >> $GITHUB_STEP_SUMMARY
-          echo "4. **Login**: admin / admin" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Login**: admin / admin123" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🌐 Method 2: Configure ngrok Authentication" >> $GITHUB_STEP_SUMMARY
           echo "1. **Add your ngrok auth token to repository secrets**:" >> $GITHUB_STEP_SUMMARY
@@ -218,7 +244,7 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
           echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
-          echo "# Login: admin/admin, then run analysis as shown above" >> $GITHUB_STEP_SUMMARY
+          echo "# Login: admin/admin123, then run analysis as shown above" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           
           # Keep SonarQube running for the specified duration anyway
