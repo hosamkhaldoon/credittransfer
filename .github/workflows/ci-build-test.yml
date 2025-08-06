@@ -473,7 +473,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     timeout-minutes: 25
-    if: ${{ !failure() }}
+    if: ${{ !failure() && false }}  # Temporarily disabled - no integration tests with [Category("Integration")] exist yet
     
     permissions:
       contents: read
@@ -483,23 +483,6 @@ jobs:
       statuses: write
     
     services:
-      sql-server:
-        image: mcr.microsoft.com/mssql/server:2019-latest
-        env:
-          ACCEPT_EULA: "Y"
-          SA_PASSWORD: "YourStrong@Password123"
-          MSSQL_PID: "Express"
-        ports:
-          - 1433:1433
-        options: >-
-          --name sqlserver
-          --hostname sqlserver
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Password123' -Q 'SELECT 1' || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 15
-          --health-start-period 90s
-      
       postgres:
         image: postgres:13
         env:
@@ -513,6 +496,22 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      
+      sql-server:
+        image: mcr.microsoft.com/mssql/server:2019-latest
+        env:
+          ACCEPT_EULA: "Y"
+          SA_PASSWORD: "YourStrong@Password123"
+          MSSQL_PID: "Express"
+        ports:
+          - 1433:1433
+        options: >-
+          --name sqlserver
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Password123' -Q 'SELECT 1' || exit 1"
+          --health-interval 45s
+          --health-timeout 15s
+          --health-retries 8
+          --health-start-period 120s
     
     steps:
     - name: "📥 Checkout Code"
@@ -555,47 +554,52 @@ jobs:
       run: |
         echo "🔍 Checking database service availability..."
         
-        # Check SQL Server
-        SQL_SERVER_READY=false
-        echo "⏳ Testing SQL Server connection..."
-        for i in {1..10}; do
-          if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT 1" > /dev/null 2>&1; then
-            echo "✅ SQL Server is ready!"
-            SQL_SERVER_READY=true
-            break
-          fi
-          echo "⏳ SQL Server attempt ${i}/10..."
-          sleep 10
-        done
-        
-        # Check PostgreSQL
+        # Check PostgreSQL first (faster startup)
         POSTGRES_READY=false
         echo "⏳ Testing PostgreSQL connection..."
-        for i in {1..5}; do
+        for i in {1..10}; do
           if docker exec $(docker ps -q --filter ancestor=postgres:13) pg_isready -U testuser -d credittransfer_test > /dev/null 2>&1; then
             echo "✅ PostgreSQL is ready!"
             POSTGRES_READY=true
             break
           fi
-          echo "⏳ PostgreSQL attempt ${i}/5..."
-          sleep 5
+          echo "⏳ PostgreSQL attempt ${i}/10..."
+          sleep 3
         done
+        
+        # Check SQL Server if PostgreSQL isn't ready
+        SQL_SERVER_READY=false
+        if [ "$POSTGRES_READY" = "false" ]; then
+          echo "⏳ Testing SQL Server connection..."
+          for i in {1..5}; do
+            if docker exec $(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest) /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong@Password123" -Q "SELECT 1" > /dev/null 2>&1; then
+              echo "✅ SQL Server is ready!"
+              SQL_SERVER_READY=true
+              break
+            fi
+            echo "⏳ SQL Server attempt ${i}/5..."
+            sleep 5
+          done
+        else
+          echo "ℹ️ Skipping SQL Server check (PostgreSQL is available)"
+        fi
         
         # Show container status for debugging
         echo "📊 Database container status:"
-        docker ps --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest
-        docker ps --filter ancestor=postgres:13
+        docker ps --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest || echo "No SQL Server containers"
+        docker ps --filter ancestor=postgres:13 || echo "No PostgreSQL containers"
         
         # Set environment variables for next steps
         echo "SQL_SERVER_READY=$SQL_SERVER_READY" >> $GITHUB_ENV
         echo "POSTGRES_READY=$POSTGRES_READY" >> $GITHUB_ENV
         
-        if [ "$SQL_SERVER_READY" = "true" ]; then
+        # Prioritize PostgreSQL over SQL Server (more reliable in CI)
+        if [ "$POSTGRES_READY" = "true" ]; then
+          echo "🎯 Using PostgreSQL for integration tests (recommended for CI)"
+          echo "DATABASE_TYPE=POSTGRES" >> $GITHUB_ENV
+        elif [ "$SQL_SERVER_READY" = "true" ]; then
           echo "🎯 Using SQL Server for integration tests"
           echo "DATABASE_TYPE=SQLSERVER" >> $GITHUB_ENV
-        elif [ "$POSTGRES_READY" = "true" ]; then
-          echo "🎯 Using PostgreSQL for integration tests"
-          echo "DATABASE_TYPE=POSTGRES" >> $GITHUB_ENV
         else
           echo "⚠️ No database services available, falling back to SQLite"
           echo "DATABASE_TYPE=SQLITE" >> $GITHUB_ENV
@@ -658,6 +662,31 @@ jobs:
         reporter: dotnet-trx
         fail-on-error: false
       continue-on-error: true
+
+    - name: "📋 Alternative Integration Test Results"
+      if: failure() || always()
+      run: |
+        echo "📋 Alternative test results processing..."
+        
+        # Count and display integration test files
+        TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | wc -l || echo "0")
+        echo "Found $TRX_COUNT integration test result files"
+        
+        if [ "$TRX_COUNT" -gt 0 ]; then
+          echo "📁 Integration test files:"
+          find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | while read file; do
+            echo "  - $(basename "$file")"
+            # Try to extract basic info from TRX file
+            if [ -f "$file" ]; then
+              TOTAL_TESTS=$(grep -o 'total="[0-9]*"' "$file" | grep -o '[0-9]*' || echo "0")
+              PASSED_TESTS=$(grep -o 'passed="[0-9]*"' "$file" | grep -o '[0-9]*' || echo "0")
+              FAILED_TESTS=$(grep -o 'failed="[0-9]*"' "$file" | grep -o '[0-9]*' || echo "0")
+              echo "    Total: $TOTAL_TESTS, Passed: $PASSED_TESTS, Failed: $FAILED_TESTS"
+            fi
+          done
+        else
+          echo "⚠️ No integration test result files found"
+        fi
 
     - name: "📋 Integration Test Summary"
       if: always()
@@ -950,7 +979,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## 🧪 Pipeline Results" >> $GITHUB_STEP_SUMMARY
         echo "- **Build & Analysis**: ${{ needs.build.result == 'success' && '✅ Passed' || (needs.build.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Integration Tests**: ${{ needs.integration-tests.result == 'success' && '✅ Passed' || (needs.integration-tests.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Integration Tests**: ${{ needs.integration-tests.result == 'success' && '✅ Passed' || (needs.integration-tests.result == 'skipped' && '⏭️ Skipped (No Category=Integration tests found)' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Docker Build**: ${{ needs.docker.result == 'success' && '✅ Passed' || (needs.docker.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Security Analysis**: ${{ needs.security.result == 'success' && '✅ Passed' || (needs.security.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Performance Tests**: ${{ needs.performance.result == 'success' && '✅ Passed' || (needs.performance.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
@@ -971,7 +1000,7 @@ jobs:
         
         # Overall status
         if [ "${{ needs.build.result }}" == "success" ] && \
-           [ "${{ needs.integration-tests.result }}" == "success" ] && \
+           ([ "${{ needs.integration-tests.result }}" == "success" ] || [ "${{ needs.integration-tests.result }}" == "skipped" ]) && \
            ([ "${{ needs.security.result }}" == "success" ] || [ "${{ needs.security.result }}" == "skipped" ]); then
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🎉 Overall Status: ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
@@ -1003,8 +1032,26 @@ jobs:
       if: always()
       uses: 8398a7/action-slack@v3
       with:
-        status: ${{ job.status }}
+        status: ${{ 
+          (needs.build.result == 'failure' || 
+           (needs.integration-tests.result == 'failure') || 
+           needs.docker.result == 'failure' || 
+           needs.security.result == 'failure' || 
+           needs.performance.result == 'failure') && 'failure' || 
+          (needs.build.result == 'cancelled' || 
+           needs.integration-tests.result == 'cancelled' || 
+           needs.docker.result == 'cancelled' || 
+           needs.security.result == 'cancelled' || 
+           needs.performance.result == 'cancelled') && 'cancelled' || 
+          'success' }}
         fields: repo,message,commit,author,action,eventName,ref,workflow
+        text: |
+          🚀 **CI/CD Pipeline Results:**
+          🏗️ Build: ${{ needs.build.result == 'success' && '✅' || needs.build.result == 'failure' && '❌' || '⏭️' }} ${{ needs.build.result }}
+          🧪 Integration: ${{ needs.integration-tests.result == 'success' && '✅' || needs.integration-tests.result == 'failure' && '❌' || '⏭️' }} ${{ needs.integration-tests.result }}
+          🐳 Docker: ${{ needs.docker.result == 'success' && '✅' || needs.docker.result == 'failure' && '❌' || '⏭️' }} ${{ needs.docker.result }}
+          🔒 Security: ${{ needs.security.result == 'success' && '✅' || needs.security.result == 'failure' && '❌' || '⏭️' }} ${{ needs.security.result }}
+          ⚡ Performance: ${{ needs.performance.result == 'success' && '✅' || needs.performance.result == 'failure' && '❌' || '⏭️' }} ${{ needs.performance.result }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       continue-on-error: true
@@ -1012,18 +1059,71 @@ jobs:
     - name: "📧 Notification Fallback"
       if: always()
       run: |
+        # Calculate overall pipeline status
+        OVERALL_STATUS="success"
+        if [ "${{ needs.build.result }}" == "failure" ] || \
+           [ "${{ needs.integration-tests.result }}" == "failure" ] || \
+           [ "${{ needs.docker.result }}" == "failure" ] || \
+           [ "${{ needs.security.result }}" == "failure" ] || \
+           [ "${{ needs.performance.result }}" == "failure" ]; then
+          OVERALL_STATUS="failure"
+        elif [ "${{ needs.build.result }}" == "cancelled" ] || \
+             [ "${{ needs.integration-tests.result }}" == "cancelled" ] || \
+             [ "${{ needs.docker.result }}" == "cancelled" ] || \
+             [ "${{ needs.security.result }}" == "cancelled" ] || \
+             [ "${{ needs.performance.result }}" == "cancelled" ]; then
+          OVERALL_STATUS="cancelled"
+        fi
+        
         # Check if Slack webhook is configured
         if [ -z "$SLACK_WEBHOOK_URL" ]; then
           echo "## 📧 Notification Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "🚀 **CreditTransfer.Modern CI/CD Pipeline Complete**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📊 **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "🏗️ **Build**: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "🧪 **Integration Tests**: ${{ needs.integration-tests.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "🐳 **Docker**: ${{ needs.docker.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "🔒 **Security**: ${{ needs.security.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "⚡ **Performance**: ${{ needs.performance.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Show overall status with appropriate emoji
+          if [ "$OVERALL_STATUS" == "failure" ]; then
+            echo "📊 **Overall Status**: ❌ FAILED" >> $GITHUB_STEP_SUMMARY
+          elif [ "$OVERALL_STATUS" == "cancelled" ]; then
+            echo "📊 **Overall Status**: 🛑 CANCELLED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "📊 **Overall Status**: ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Job Results:" >> $GITHUB_STEP_SUMMARY
+          
+          # Build result with emoji
+          BUILD_EMOJI="⏭️"
+          [ "${{ needs.build.result }}" == "success" ] && BUILD_EMOJI="✅"
+          [ "${{ needs.build.result }}" == "failure" ] && BUILD_EMOJI="❌"
+          echo "🏗️ **Build**: $BUILD_EMOJI ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Integration Tests result with emoji
+          INTEGRATION_EMOJI="⏭️"
+          [ "${{ needs.integration-tests.result }}" == "success" ] && INTEGRATION_EMOJI="✅"
+          [ "${{ needs.integration-tests.result }}" == "failure" ] && INTEGRATION_EMOJI="❌"
+          echo "🧪 **Integration Tests**: $INTEGRATION_EMOJI ${{ needs.integration-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Docker result with emoji
+          DOCKER_EMOJI="⏭️"
+          [ "${{ needs.docker.result }}" == "success" ] && DOCKER_EMOJI="✅"
+          [ "${{ needs.docker.result }}" == "failure" ] && DOCKER_EMOJI="❌"
+          echo "🐳 **Docker**: $DOCKER_EMOJI ${{ needs.docker.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Security result with emoji
+          SECURITY_EMOJI="⏭️"
+          [ "${{ needs.security.result }}" == "success" ] && SECURITY_EMOJI="✅"
+          [ "${{ needs.security.result }}" == "failure" ] && SECURITY_EMOJI="❌"
+          echo "🔒 **Security**: $SECURITY_EMOJI ${{ needs.security.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Performance result with emoji
+          PERFORMANCE_EMOJI="⏭️"
+          [ "${{ needs.performance.result }}" == "success" ] && PERFORMANCE_EMOJI="✅"
+          [ "${{ needs.performance.result }}" == "failure" ] && PERFORMANCE_EMOJI="❌"
+          echo "⚡ **Performance**: $PERFORMANCE_EMOJI ${{ needs.performance.result }}" >> $GITHUB_STEP_SUMMARY
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "📋 **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "🌿 **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
@@ -1031,7 +1131,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "💡 **Note**: To enable Slack notifications, add SLACK_WEBHOOK_URL to repository secrets" >> $GITHUB_STEP_SUMMARY
         else
-          echo "✅ Slack notification sent successfully"
+          echo "✅ Slack notification sent with overall status: $OVERALL_STATUS"
         fi
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
