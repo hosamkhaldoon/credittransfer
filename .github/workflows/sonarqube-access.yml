@@ -37,14 +37,14 @@ jobs:
     
     services:
       sonarqube:
-        image: sonarqube:lts-community
+        image: sonarqube:9.9-community
         ports:
           - 9000:9000
         env:
           SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
-          SONAR_JDBC_URL: jdbc:h2:mem:sonarqube
-          SONAR_WEB_JAVAADDITIONALOPTS: -Xmx512m
-          SONAR_CE_JAVAADDITIONALOPTS: -Xmx512m
+          SONAR_JDBC_URL: jdbc:h2:mem:sonar
+          SONAR_JDBC_USERNAME: sonar
+          SONAR_JDBC_PASSWORD: sonar
         options: >-
           --health-cmd "curl -f http://localhost:9000/api/system/status || exit 1"
           --health-interval 45s
@@ -75,7 +75,7 @@ jobs:
         
         # Check logs for any immediate errors
         echo "📋 Recent SonarQube logs:"
-        docker logs $(docker ps -q --filter ancestor=sonarqube:lts-community) --tail 10 || echo "Could not fetch logs yet"
+        docker logs $(docker ps -q --filter ancestor=sonarqube:9.9-community) --tail 10 || echo "Could not fetch logs yet"
         
         # Wait with more patience and better feedback
         for i in {1..120}; do
@@ -93,7 +93,7 @@ jobs:
             echo "🔍 Container status:"
             docker ps | grep sonarqube || echo "Container not found"
             echo "📋 Latest logs:"
-            docker logs $(docker ps -q --filter ancestor=sonarqube:lts-community) --tail 5 2>/dev/null || echo "Could not fetch logs"
+            docker logs $(docker ps -q --filter ancestor=sonarqube:9.9-community) --tail 5 2>/dev/null || echo "Could not fetch logs"
             echo "💾 Memory usage:"
             docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep sonarqube || echo "Stats not available"
           fi
@@ -105,7 +105,7 @@ jobs:
         if ! curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
           echo "❌ SonarQube failed to start within 10 minutes"
           echo "📋 Full container logs:"
-          docker logs $(docker ps -q --filter ancestor=sonarqube:lts-community) || echo "Could not fetch logs"
+          docker logs $(docker ps -q --filter ancestor=sonarqube:9.9-community) || echo "Could not fetch logs"
           echo "🔍 Final container status:"
           docker ps -a | grep sonarqube || echo "No container found"
           exit 1
@@ -262,7 +262,7 @@ jobs:
           echo "2. **Run the following commands in Codespaces terminal**:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "# Start SonarQube" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:9.9-community" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Wait 2-3 minutes, then run your analysis" >> $GITHUB_STEP_SUMMARY
           echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
@@ -282,7 +282,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🌐 Method 3: Local Docker Setup" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:9.9-community" >> $GITHUB_STEP_SUMMARY
           echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
           echo "# Login: admin/admin123, then run analysis as shown above" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
