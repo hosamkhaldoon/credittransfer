@@ -149,7 +149,7 @@ jobs:
           
           # Start ngrok tunnel
           echo "🚀 Creating authenticated public tunnel..."
-          ngrok http 9000 --log=stdout > ngrok.log 2>&1 &
+          ngrok http 9000 --log=stdout --request-header-add "ngrok-skip-browser-warning:any" > ngrok.log 2>&1 &
           NGROK_PID=$!
           
           # Wait for ngrok to initialize
@@ -162,14 +162,15 @@ jobs:
             echo "🎉 SUCCESS! SonarQube is now publicly accessible!"
             echo ""
             echo "🔗 **Access URL**: $NGROK_URL"
+            echo "🔗 **Direct URL (No Warning)**: $NGROK_URL?ngrok-skip-browser-warning=true"
             echo "🔑 **Login**: admin / admin123"
             echo "📊 **Project**: credit-transfer-modern"
             echo "⏰ **Available for**: ${{ inputs.access_duration }} minutes"
             echo ""
             echo "📊 **Quick Links**:"
-            echo "   Dashboard: $NGROK_URL/dashboard?id=credit-transfer-modern"
-            echo "   Issues: $NGROK_URL/project/issues?id=credit-transfer-modern"
-            echo "   Code: $NGROK_URL/code?id=credit-transfer-modern"
+            echo "   Dashboard: $NGROK_URL/dashboard?id=credit-transfer-modern&ngrok-skip-browser-warning=true"
+            echo "   Issues: $NGROK_URL/project/issues?id=credit-transfer-modern&ngrok-skip-browser-warning=true"
+            echo "   Code: $NGROK_URL/code?id=credit-transfer-modern&ngrok-skip-browser-warning=true"
             echo ""
             
             # Save access info to summary
@@ -177,14 +178,15 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🔗 Access Information" >> $GITHUB_STEP_SUMMARY
             echo "- **URL**: [$NGROK_URL]($NGROK_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Direct URL (No Warning)**: [$NGROK_URL?ngrok-skip-browser-warning=true]($NGROK_URL?ngrok-skip-browser-warning=true)" >> $GITHUB_STEP_SUMMARY
             echo "- **Login**: admin / admin123" >> $GITHUB_STEP_SUMMARY
             echo "- **Project**: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
             echo "- **Available for**: ${{ inputs.access_duration }} minutes" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 📊 Quick Links" >> $GITHUB_STEP_SUMMARY
-            echo "- [Dashboard]($NGROK_URL/dashboard?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-            echo "- [Issues]($NGROK_URL/project/issues?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-            echo "- [Code Analysis]($NGROK_URL/code?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
+            echo "### 📊 Quick Links (Direct Access)" >> $GITHUB_STEP_SUMMARY
+            echo "- [Dashboard]($NGROK_URL/dashboard?id=credit-transfer-modern&ngrok-skip-browser-warning=true)" >> $GITHUB_STEP_SUMMARY
+            echo "- [Issues]($NGROK_URL/project/issues?id=credit-transfer-modern&ngrok-skip-browser-warning=true)" >> $GITHUB_STEP_SUMMARY
+            echo "- [Code Analysis]($NGROK_URL/code?id=credit-transfer-modern&ngrok-skip-browser-warning=true)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "⏰ **This access will automatically close in ${{ inputs.access_duration }} minutes.**" >> $GITHUB_STEP_SUMMARY
             
