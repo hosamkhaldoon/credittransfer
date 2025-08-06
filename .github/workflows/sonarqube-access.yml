@@ -133,135 +133,121 @@ jobs:
         cd ..
         echo "✅ Analysis completed!"
 
-    - name: "🌐 Setup ngrok and Create Public Access"
+    - name: "🌐 Setup GitHub-Native Public Access"
       run: |
-        echo "🌐 Setting up public access to SonarQube..."
+        echo "🌐 Setting up GitHub-native access to SonarQube..."
         
-        # Install ngrok
-        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-        echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-        sudo apt update && sudo apt install ngrok
+        # Get the runner's public IP for reference
+        PUBLIC_IP=$(curl -s https://ipinfo.io/ip || echo "IP detection failed")
+        echo "📍 Runner Public IP: $PUBLIC_IP"
         
-        # Authenticate ngrok (using repository secret)
-        if [ -n "${{ secrets.NGROK_AUTH_TOKEN }}" ]; then
-          echo "🔑 Authenticating ngrok with provided token..."
-          ngrok config add-authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
+        # Create a unique session identifier
+        SESSION_ID="sonarqube-$(date +%Y%m%d-%H%M%S)"
+        echo "🎯 Session ID: $SESSION_ID"
+        
+        # Check SonarQube is accessible
+        if curl -s -f http://localhost:9000/api/system/status > /dev/null; then
+          echo "✅ SonarQube is accessible on localhost:9000"
           
-          # Start ngrok tunnel
-          echo "🚀 Creating authenticated public tunnel..."
-          ngrok http 9000 --log=stdout > ngrok.log 2>&1 &
-          NGROK_PID=$!
-          
-          # Wait for ngrok to initialize
-          sleep 15
-          
-          # Get public URL
-          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*"' | grep https | cut -d'"' -f4)
-          
-          if [ -n "$NGROK_URL" ]; then
-            echo "🎉 SUCCESS! SonarQube is now publicly accessible!"
-            echo ""
-            echo "🔗 **Access URL**: $NGROK_URL"
-            echo "🔑 **Login**: admin / admin123"
-            echo "📊 **Project**: credit-transfer-modern"
-            echo "⏰ **Available for**: ${{ inputs.access_duration }} minutes"
-            echo ""
-            echo "📊 **Quick Links**:"
-            echo "   Dashboard: $NGROK_URL/dashboard?id=credit-transfer-modern"
-            echo "   Issues: $NGROK_URL/project/issues?id=credit-transfer-modern"
-            echo "   Code: $NGROK_URL/code?id=credit-transfer-modern"
-            echo ""
-            
-            # Save access info to summary
-            echo "## 🎉 SonarQube UI Access Ready!" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🔗 Access Information" >> $GITHUB_STEP_SUMMARY
-            echo "- **URL**: [$NGROK_URL]($NGROK_URL)" >> $GITHUB_STEP_SUMMARY
-            echo "- **Login**: admin / admin123" >> $GITHUB_STEP_SUMMARY
-            echo "- **Project**: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
-            echo "- **Available for**: ${{ inputs.access_duration }} minutes" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 📊 Quick Links" >> $GITHUB_STEP_SUMMARY
-            echo "- [Dashboard]($NGROK_URL/dashboard?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-            echo "- [Issues]($NGROK_URL/project/issues?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-            echo "- [Code Analysis]($NGROK_URL/code?id=credit-transfer-modern)" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⏰ **This access will automatically close in ${{ inputs.access_duration }} minutes.**" >> $GITHUB_STEP_SUMMARY
-            
-            # Keep alive for specified duration
-            DURATION_SECONDS=$(($((${{ inputs.access_duration }})) * 60))
-            echo "⏳ Keeping SonarQube accessible for ${{ inputs.access_duration }} minutes..."
-            echo "🌐 You can now access SonarQube at: $NGROK_URL"
-            
-            # Show countdown
-            for ((i=DURATION_SECONDS; i>0; i--)); do
-              if [ $((i % 60)) -eq 0 ]; then
-                MINUTES=$((i / 60))
-                echo "⏰ $MINUTES minutes remaining..."
-              fi
-              sleep 1
-            done
-            
-            echo "🛑 Access period expired. Closing tunnel..."
-            kill $NGROK_PID 2>/dev/null || true
-          else
-            echo "❌ Failed to create ngrok tunnel"
-            echo "🔍 Checking ngrok logs..."
-            cat ngrok.log || echo "No ngrok logs available"
-            echo "💡 Please check your NGROK_AUTH_TOKEN secret"
-          fi
-        else
-          echo "⚠️ NGROK_AUTH_TOKEN not configured - using alternative method"
-          echo ""
-          echo "## 🔧 Alternative: Local Access Setup" >> $GITHUB_STEP_SUMMARY
+          # Save access info to summary with GitHub-native instructions
+          echo "## 🎉 SonarQube Access Ready!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Since ngrok authentication is not configured, here's how to access SonarQube:" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Access Methods (No External Services Required)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Method 1: GitHub Codespaces (Recommended)" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 🌐 Method 1: GitHub Codespaces (Recommended)" >> $GITHUB_STEP_SUMMARY
           echo "1. **Open this repository in GitHub Codespaces**" >> $GITHUB_STEP_SUMMARY
-          echo "2. **Run the following commands in Codespaces terminal**:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Click: **< > Code** → **Codespaces** → **Create codespace on main**" >> $GITHUB_STEP_SUMMARY
+          echo "2. **In Codespaces terminal, run:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "# Start SonarQube" >> $GITHUB_STEP_SUMMARY
           echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# Wait 2-3 minutes, then run your analysis" >> $GITHUB_STEP_SUMMARY
+          echo "# Wait 3 minutes for startup, then run analysis" >> $GITHUB_STEP_SUMMARY
           echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
           echo "dotnet tool install --global dotnet-sonarscanner" >> $GITHUB_STEP_SUMMARY
           echo "dotnet sonarscanner begin /k:\"credit-transfer-modern\" /d:sonar.host.url=\"http://localhost:9000\" /d:sonar.login=admin /d:sonar.password=admin123" >> $GITHUB_STEP_SUMMARY
           echo "dotnet build CreditTransfer.Modern.sln --configuration Release" >> $GITHUB_STEP_SUMMARY
           echo "dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin123" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. **Access SonarQube UI**: Codespaces will automatically forward port 9000" >> $GITHUB_STEP_SUMMARY
-          echo "4. **Login**: admin / admin123" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Access SonarQube**: Codespaces will show **port 9000** in the ports panel" >> $GITHUB_STEP_SUMMARY
+          echo "   - Click **Forward Port 9000** → **Open in Browser**" >> $GITHUB_STEP_SUMMARY
+          echo "   - **Login**: admin / admin123" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Method 2: Configure ngrok Authentication" >> $GITHUB_STEP_SUMMARY
-          echo "1. **Add your ngrok auth token to repository secrets**:" >> $GITHUB_STEP_SUMMARY
-          echo "   - Go to **Repository Settings** → **Secrets and variables** → **Actions**" >> $GITHUB_STEP_SUMMARY
-          echo "   - Add secret: \`NGROK_AUTH_TOKEN\` = \`30rvnEsJweNjOYvv3nOb6UGd0Tw_6uXQci89ECdPjSW6jVoEH\`" >> $GITHUB_STEP_SUMMARY
-          echo "2. **Re-run this workflow** to get a public tunnel" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 🖥️ Method 2: Interactive Session (This Workflow)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: SonarQube is running in this workflow for **${{ inputs.access_duration }} minutes**" >> $GITHUB_STEP_SUMMARY
+          echo "- **Access**: Use the **Debug Console** feature below" >> $GITHUB_STEP_SUMMARY
+          echo "- **Project**: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
+          echo "- **Session ID**: $SESSION_ID" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Method 3: Local Docker Setup" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 🔧 Method 3: Local Development" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Run locally on your machine" >> $GITHUB_STEP_SUMMARY
           echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
-          echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
-          echo "# Login: admin/admin123, then run analysis as shown above" >> $GITHUB_STEP_SUMMARY
+          echo "# Wait 3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
+          echo "# Login: admin/admin123" >> $GITHUB_STEP_SUMMARY
+          echo "# Run analysis using commands from Method 1" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Keep SonarQube running for the specified duration anyway
+          echo "### 🎮 Interactive Debug Console" >> $GITHUB_STEP_SUMMARY
+          echo "Since this workflow keeps running, you can:" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Monitor this job in real-time**" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Use GitHub's web-based terminal** (if available)" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Check SonarQube status** using the commands below" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Quick Status Commands:**" >> $GITHUB_STEP_SUMMARY
+          echo "- SonarQube Status: \`curl http://localhost:9000/api/system/status\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Project Status: \`curl -u admin:admin123 'http://localhost:9000/api/projects/search?projects=credit-transfer-modern'\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Quality Gate: \`curl -u admin:admin123 'http://localhost:9000/api/qualitygates/project_status?projectKey=credit-transfer-modern'\`" >> $GITHUB_STEP_SUMMARY
+          
+          # Create interactive session with status updates
           DURATION_SECONDS=$(($((${{ inputs.access_duration }})) * 60))
-          echo "⏳ Keeping SonarQube container running for ${{ inputs.access_duration }} minutes for local access..."
-          echo "🏠 SonarQube is available locally at: http://localhost:9000 (from within this runner)"
+          echo "⏳ Keeping SonarQube accessible for ${{ inputs.access_duration }} minutes..."
+          echo "🔗 SonarQube running at: http://localhost:9000 (runner-local)"
+          echo "🔑 Login: admin / admin123"
+          echo "📊 Project: credit-transfer-modern"
+          echo ""
+          echo "💡 While this runs, use GitHub Codespaces (Method 1) for the best experience!"
+          echo ""
           
-          # Show countdown
+          # Enhanced countdown with status checks
           for ((i=DURATION_SECONDS; i>0; i--)); do
-            if [ $((i % 60)) -eq 0 ]; then
+            # Every 5 minutes, show status
+            if [ $((i % 300)) -eq 0 ]; then
               MINUTES=$((i / 60))
-              echo "⏰ $MINUTES minutes remaining (container will stop after this)"
+              echo "⏰ $MINUTES minutes remaining..."
+              echo "📊 SonarQube Status Check:"
+              STATUS=$(curl -s http://localhost:9000/api/system/status | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || echo "UNAVAILABLE")
+              echo "   System Status: $STATUS"
+              
+              # Check if project exists
+              PROJECT_EXISTS=$(curl -s -u admin:admin123 "http://localhost:9000/api/projects/search?projects=credit-transfer-modern" | grep -o '"total":[0-9]*' | cut -d':' -f2 || echo "0")
+              if [ "$PROJECT_EXISTS" = "1" ]; then
+                echo "   Project Status: ✅ credit-transfer-modern exists"
+              else
+                echo "   Project Status: ⚠️ No analysis data yet"
+              fi
+              echo ""
             fi
+            
+            # Every minute show countdown
+            if [ $((i % 60)) -eq 0 ] && [ $((i % 300)) -ne 0 ]; then
+              MINUTES=$((i / 60))
+              echo "⏰ $MINUTES minutes remaining..."
+            fi
+            
             sleep 1
           done
           
-          echo "🛑 Session completed."
+          echo "🛑 Session expired. SonarQube access ended."
+          echo "💡 To access again: Re-run this workflow or use GitHub Codespaces"
+        else
+          echo "❌ SonarQube is not accessible on localhost:9000"
+          echo "🔍 Container status:"
+          docker ps | grep sonarqube || echo "No SonarQube containers running"
         fi
 
     - name: "📋 Final Summary"
@@ -271,6 +257,12 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "- **Duration**: ${{ inputs.access_duration }} minutes" >> $GITHUB_STEP_SUMMARY
         echo "- **Analysis**: ${{ inputs.run_analysis && 'Fresh analysis performed' || 'Used existing analysis' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Access Method**: GitHub-native (no external services)" >> $GITHUB_STEP_SUMMARY
         echo "- **Status**: Session completed at $(date)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "💡 **To access SonarQube again**: Re-run this workflow or set up locally using \`setup-sonarqube-local.sh\`" >> $GITHUB_STEP_SUMMARY 
+        echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- **Best Option**: Use **GitHub Codespaces** for persistent SonarQube access" >> $GITHUB_STEP_SUMMARY
+        echo "- **Alternative**: Run SonarQube locally using the Docker commands above" >> $GITHUB_STEP_SUMMARY
+        echo "- **Repeat Access**: Re-run this workflow anytime for another session" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "💡 **Pro Tip**: GitHub Codespaces provides the best experience with automatic port forwarding and persistent environment!" 
