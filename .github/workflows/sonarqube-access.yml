@@ -87,18 +87,22 @@ jobs:
         
         # Create SonarQube analysis properties file
         echo "📝 Creating SonarQube analysis properties..."
-        cat > sonar-project.properties << EOF
-sonar.projectKey=$SONAR_PROJECT_KEY
-sonar.projectName=$SONAR_PROJECT_NAME
-sonar.projectVersion=$VERSION
-sonar.sources=.
-sonar.sourceEncoding=UTF-8
-sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml
-sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/*test*,**/*tests*
-sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*
-sonar.ssl.tlsversion=TLSv1.2
-sonar.ws.timeout=300
-EOF
+        cat > sonar-project.properties << 'EOF'
+          sonar.projectKey=$SONAR_PROJECT_KEY
+          sonar.projectName=$SONAR_PROJECT_NAME
+          sonar.projectVersion=$VERSION
+          sonar.sources=.
+          sonar.sourceEncoding=UTF-8
+          sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml
+          sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/*test*,**/*tests*
+          sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*
+          sonar.ssl.tlsversion=TLSv1.2
+          sonar.ws.timeout=300
+        EOF
+        
+        # Expand variables in properties file
+        envsubst < sonar-project.properties > sonar-project.properties.tmp
+        mv sonar-project.properties.tmp sonar-project.properties
         
         # Begin analysis with debug output
         echo "🚀 Starting SonarQube analysis..."
