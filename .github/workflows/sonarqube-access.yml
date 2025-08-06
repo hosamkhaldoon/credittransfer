@@ -62,101 +62,180 @@ jobs:
         echo "DOTNET_VERSION: $DOTNET_VERSION"
         echo "Current directory: $(pwd)"
         
-        # Install scanner with verbose output
-        echo "📦 Installing SonarScanner..."
-        dotnet tool install --global dotnet-sonarscanner --verbosity detailed || {
-          echo "⚠️ Scanner might be already installed, continuing..."
-        }
+        # Check if SonarQube requires web authentication
+        echo "🔍 Testing SonarQube connectivity..."
+        RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/sonar_test.html "$SONAR_HOST_URL/api/system/status" || echo "000")
         
-        # Verify scanner installation
-        echo "🔍 Verifying scanner installation..."
-        dotnet tool list --global
+        if [ "$RESPONSE" = "200" ]; then
+          echo "✅ SonarQube API is directly accessible"
+          DIRECT_ACCESS=true
+        else
+          echo "⚠️ SonarQube requires web authentication (HTTP $RESPONSE)"
+          echo "🌐 GitHub Codespaces requires browser-based authentication"
+          DIRECT_ACCESS=false
+          
+          # Show the response for debugging
+          echo "Response content:"
+          cat /tmp/sonar_test.html || echo "No response content"
+        fi
         
-        # Change to solution directory
-        echo "📂 Changing to solution directory..."
-        cd Migrated || {
-          echo "❌ Error: Migrated directory not found"
-          ls -la
-          exit 1
-        }
-        
-        # Get version
-        echo "🏷️ Getting version information..."
-        VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d)")
-        echo "Version: $VERSION"
-        
-        # Create SonarQube analysis properties file
-        echo "📝 Creating SonarQube analysis properties..."
-        cat > sonar-project.properties << 'EOF'
-          sonar.projectKey=$SONAR_PROJECT_KEY
-          sonar.projectName=$SONAR_PROJECT_NAME
-          sonar.projectVersion=$VERSION
-          sonar.sources=.
-          sonar.sourceEncoding=UTF-8
-          sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml
-          sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/*test*,**/*tests*
-          sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*
-          sonar.ssl.tlsversion=TLSv1.2
-          sonar.ws.timeout=300
-        EOF
-        
-        # Expand variables in properties file
-        envsubst < sonar-project.properties > sonar-project.properties.tmp
-        mv sonar-project.properties.tmp sonar-project.properties
-        
-        # Begin analysis with debug output
-        echo "🚀 Starting SonarQube analysis..."
-        set -x  # Enable command echo
-        
-        # Set SSL verification options
-        export SONAR_SCANNER_OPTS="-Djavax.net.ssl.trustAll=true -Dsonar.ws.timeout=300 -Dsonar.host.url=$SONAR_HOST_URL"
-        
-        dotnet sonarscanner begin \
-          /k:"$SONAR_PROJECT_KEY" \
-          /n:"$SONAR_PROJECT_NAME" \
-          /v:"$VERSION" \
-          /d:sonar.host.url="$SONAR_HOST_URL" \
-          /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
-          /d:sonar.verbose=true \
-          /d:sonar.log.level="DEBUG" \
-          /d:sonar.ws.timeout=300 \
-          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" \
-          /d:sonar.ssl.tlsversion=TLSv1.2 \
-          /d:sonar.sourceEncoding=UTF-8
-        
-        # Build solution
-        echo "🔨 Building solution..."
-        dotnet build "$SOLUTION_FILE" \
-          --configuration Release \
-          --verbosity detailed
-        
-        # End analysis
-        echo "📊 Completing SonarQube analysis..."
-        dotnet sonarscanner end \
-          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" \
-          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
-        
-        set +x  # Disable command echo
-        
-        # Verify analysis results
-        echo "✅ Checking analysis status..."
-        sleep 10  # Give SonarQube time to process
-        
-        # Use proper authentication header for status check
-        ANALYSIS_STATUS=$(curl -s \
-          -H "Authorization: Bearer ${{ secrets.SONAR_TOKEN }}" \
-          --insecure \
-          "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" || echo "Failed to get status")
-        
-        echo "Analysis Status Response: $ANALYSIS_STATUS"
-        
-        cd ..
-        echo "✅ Analysis process completed!"
+        if [ "$DIRECT_ACCESS" = "true" ]; then
+          echo "🚀 Proceeding with automated analysis..."
+          
+          # Install scanner with verbose output
+          echo "📦 Installing SonarScanner..."
+          dotnet tool install --global dotnet-sonarscanner --verbosity detailed || {
+            echo "⚠️ Scanner might be already installed, continuing..."
+          }
+          
+          # Verify scanner installation
+          echo "🔍 Verifying scanner installation..."
+          dotnet tool list --global
+          
+          # Change to solution directory
+          echo "📂 Changing to solution directory..."
+          cd Migrated || {
+            echo "❌ Error: Migrated directory not found"
+            ls -la
+            exit 1
+          }
+          
+          # Get version
+          echo "🏷️ Getting version information..."
+          VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d)")
+          echo "Version: $VERSION"
+          
+          # Begin analysis with debug output
+          echo "🚀 Starting SonarQube analysis..."
+          set -x  # Enable command echo
+          
+          dotnet sonarscanner begin \
+            /k:"$SONAR_PROJECT_KEY" \
+            /n:"$SONAR_PROJECT_NAME" \
+            /v:"$VERSION" \
+            /d:sonar.host.url="$SONAR_HOST_URL" \
+            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
+            /d:sonar.verbose=true \
+            /d:sonar.log.level="DEBUG"
+          
+          # Build solution
+          echo "🔨 Building solution..."
+          dotnet build "$SOLUTION_FILE" \
+            --configuration Release \
+            --verbosity detailed
+          
+          # End analysis
+          echo "📊 Completing SonarQube analysis..."
+          dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          
+          set +x  # Disable command echo
+          
+          cd ..
+          echo "✅ Automated analysis completed!"
+          
+        else
+          echo "📋 Creating manual analysis instructions..."
+          
+          # Change to solution directory for file generation
+          cd Migrated || {
+            echo "❌ Error: Migrated directory not found"
+            ls -la
+            exit 1
+          }
+          
+          # Create manual analysis script
+          cat > run-sonar-analysis.sh << 'SCRIPT_EOF'
+#!/bin/bash
+echo "🔍 Manual SonarQube Analysis Script"
+echo "=================================="
+
+# Install scanner if not present
+if ! command -v dotnet-sonarscanner &> /dev/null; then
+    echo "📦 Installing SonarScanner..."
+    dotnet tool install --global dotnet-sonarscanner
+fi
+
+# Get version
+VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d)")
+echo "Version: $VERSION"
+
+# Begin analysis
+echo "🚀 Starting SonarQube analysis..."
+dotnet sonarscanner begin \
+  /k:"credit-transfer-modern" \
+  /n:"Credit Transfer Modern" \
+  /v:"$VERSION" \
+  /d:sonar.host.url="https://studious-chainsaw-5g9w67rg9xp52rp5-9000.app.github.dev" \
+  /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
+
+# Build solution
+echo "🔨 Building solution..."
+dotnet build CreditTransfer.Modern.sln --configuration Release
+
+# End analysis
+echo "📊 Completing SonarQube analysis..."
+dotnet sonarscanner end /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
+
+echo "✅ Analysis completed!"
+SCRIPT_EOF
+          
+          chmod +x run-sonar-analysis.sh
+          
+          # Create PowerShell version too
+          cat > run-sonar-analysis.ps1 << 'PS_EOF'
+Write-Host "🔍 Manual SonarQube Analysis Script" -ForegroundColor Cyan
+Write-Host "==================================" -ForegroundColor Cyan
+
+# Install scanner if not present
+if (!(Get-Command "dotnet-sonarscanner" -ErrorAction SilentlyContinue)) {
+    Write-Host "📦 Installing SonarScanner..." -ForegroundColor Yellow
+    dotnet tool install --global dotnet-sonarscanner
+}
+
+# Get version
+try {
+    $VERSION = git rev-parse --short HEAD
+} catch {
+    $VERSION = "manual-$(Get-Date -Format 'yyyyMMdd')"
+}
+Write-Host "Version: $VERSION" -ForegroundColor Green
+
+# Begin analysis
+Write-Host "🚀 Starting SonarQube analysis..." -ForegroundColor Yellow
+dotnet sonarscanner begin `
+  /k:"credit-transfer-modern" `
+  /n:"Credit Transfer Modern" `
+  /v:"$VERSION" `
+  /d:sonar.host.url="https://studious-chainsaw-5g9w67rg9xp52rp5-9000.app.github.dev" `
+  /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
+
+# Build solution
+Write-Host "🔨 Building solution..." -ForegroundColor Yellow
+dotnet build CreditTransfer.Modern.sln --configuration Release
+
+# End analysis
+Write-Host "📊 Completing SonarQube analysis..." -ForegroundColor Yellow
+dotnet sonarscanner end /d:sonar.token="YOUR_SONAR_TOKEN_HERE"
+
+Write-Host "✅ Analysis completed!" -ForegroundColor Green
+PS_EOF
+          
+          cd ..
+          
+          echo "📁 Manual analysis scripts created:"
+          echo "   - Migrated/run-sonar-analysis.sh (Linux/Mac)"
+          echo "   - Migrated/run-sonar-analysis.ps1 (Windows)"
+          echo ""
+          echo "💡 Since SonarQube requires web authentication, please:"
+          echo "   1. Access SonarQube directly: $SONAR_HOST_URL"
+          echo "   2. Log in through the web interface"
+          echo "   3. Generate a token in User Settings → Security → Tokens"
+          echo "   4. Run the manual analysis script with your token"
+        fi
       env:
         DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
         DOTNET_CLI_TELEMETRY_OPTOUT: true
         DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: 1
-        SONAR_SCANNER_OPTS: "-Djavax.net.ssl.trustAll=true -Dsonar.ws.timeout=300"
 
     - name: "🌐 Setup GitHub Codespaces Access"
       run: |
@@ -166,57 +245,45 @@ jobs:
         SESSION_ID="sonarqube-$(date +%Y%m%d-%H%M%S)"
         echo "🎯 Session ID: $SESSION_ID"
         
-        # Check SonarQube is accessible
-        if curl -s -f "$SONAR_HOST_URL/api/system/status" > /dev/null; then
-          echo "✅ SonarQube is accessible on GitHub Codespaces"
-          
-          # Save access info to summary
-          echo "## 🎉 SonarQube Access Ready!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Access Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **URL**: $SONAR_HOST_URL" >> $GITHUB_STEP_SUMMARY
-          echo "- **Project**: $SONAR_PROJECT_KEY" >> $GITHUB_STEP_SUMMARY
-          echo "- **Token**: Using configured SONAR_TOKEN" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Quick status check
-          echo "### 📊 Current Status" >> $GITHUB_STEP_SUMMARY
-          STATUS=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/system/status" | jq -r '.status' || echo "UNAVAILABLE")
-          echo "- **System Status**: $STATUS" >> $GITHUB_STEP_SUMMARY
-          
-          # Project status
-          PROJECT_STATUS=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" | jq -r '.projectStatus.status' || echo "UNKNOWN")
-          echo "- **Quality Gate**: $PROJECT_STATUS" >> $GITHUB_STEP_SUMMARY
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔍 Analysis Commands" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# Run analysis" >> $GITHUB_STEP_SUMMARY
-          echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
-          echo "dotnet tool install --global dotnet-sonarscanner" >> $GITHUB_STEP_SUMMARY
-          echo "dotnet sonarscanner begin /k:\"$SONAR_PROJECT_KEY\" /d:sonar.host.url=\"$SONAR_HOST_URL\" /d:sonar.token=\"$SONAR_TOKEN\"" >> $GITHUB_STEP_SUMMARY
-          echo "dotnet build CreditTransfer.Modern.sln --configuration Release" >> $GITHUB_STEP_SUMMARY
-          echo "dotnet sonarscanner end /d:sonar.token=\"$SONAR_TOKEN\"" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          
-        else
-          echo "❌ SonarQube is not accessible at $SONAR_HOST_URL"
-          echo "⚠️ Please check your GitHub Codespaces URL and ensure SonarQube is running"
-        fi
-
-    - name: "📋 Final Summary"
-      if: always()
-      run: |
-        echo "## 📋 Session Complete" >> $GITHUB_STEP_SUMMARY
+        # Save access info to summary
+        echo "## 🎉 SonarQube Access Ready!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Duration**: ${{ inputs.access_duration }} minutes" >> $GITHUB_STEP_SUMMARY
-        echo "- **Analysis**: ${{ inputs.run_analysis && 'Fresh analysis performed' || 'Used existing analysis' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Access Method**: GitHub-native (no external services)" >> $GITHUB_STEP_SUMMARY
-        echo "- **Status**: Session completed at $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "### 🌐 Web Access (Recommended)" >> $GITHUB_STEP_SUMMARY
+        echo "**Direct URL**: [$SONAR_HOST_URL]($SONAR_HOST_URL)" >> $GITHUB_STEP_SUMMARY
+        echo "- Click the link above to access SonarQube directly" >> $GITHUB_STEP_SUMMARY
+        echo "- Log in using your GitHub account (via Codespaces authentication)" >> $GITHUB_STEP_SUMMARY
+        echo "- Project: **$SONAR_PROJECT_KEY**" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
-        echo "- **Best Option**: Use **GitHub Codespaces** for persistent SonarQube access" >> $GITHUB_STEP_SUMMARY
-        echo "- **Alternative**: Run SonarQube locally using the Docker commands above" >> $GITHUB_STEP_SUMMARY
-        echo "- **Repeat Access**: Re-run this workflow anytime for another session" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 🔑 Token Setup for Manual Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "1. **Access SonarQube**: [$SONAR_HOST_URL]($SONAR_HOST_URL)" >> $GITHUB_STEP_SUMMARY
+        echo "2. **Login**: Use GitHub authentication (automatic via Codespaces)" >> $GITHUB_STEP_SUMMARY
+        echo "3. **Generate Token**: User Account → My Account → Security → Generate Tokens" >> $GITHUB_STEP_SUMMARY
+        echo "4. **Token Name**: \`credit-transfer-analysis\`" >> $GITHUB_STEP_SUMMARY
+        echo "5. **Token Type**: Project Analysis Token" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "💡 **Pro Tip**: GitHub Codespaces provides the best experience with automatic port forwarding and persistent environment!" 
+        
+        echo "### 🚀 Manual Analysis Commands" >> $GITHUB_STEP_SUMMARY
+        echo "After generating your token, use these commands:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "#### Linux/Mac:" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
+        echo "chmod +x run-sonar-analysis.sh" >> $GITHUB_STEP_SUMMARY
+        echo "# Edit the script to replace YOUR_SONAR_TOKEN_HERE with your actual token" >> $GITHUB_STEP_SUMMARY
+        echo "./run-sonar-analysis.sh" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "#### Windows PowerShell:" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`powershell" >> $GITHUB_STEP_SUMMARY
+        echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
+        echo "# Edit run-sonar-analysis.ps1 to replace YOUR_SONAR_TOKEN_HERE with your actual token" >> $GITHUB_STEP_SUMMARY
+        echo "./run-sonar-analysis.ps1" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 📊 Project Status" >> $GITHUB_STEP_SUMMARY
+        echo "- **Project Key**: \`$SONAR_PROJECT_KEY\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Host URL**: \`$SONAR_HOST_URL\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Session**: \`$SESSION_ID\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Access Method**: GitHub Codespaces (Web Authentication Required)" >> $GITHUB_STEP_SUMMARY 
