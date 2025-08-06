@@ -36,33 +36,17 @@ jobs:
     timeout-minutes: 90
     
     services:
-      postgres:
-        image: postgres:13
-        env:
-          POSTGRES_USER: sonar
-          POSTGRES_PASSWORD: sonar
-          POSTGRES_DB: sonar
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      
       sonarqube:
         image: sonarqube:9.9-community
         ports:
           - 9000:9000
         env:
           SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
-          SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/sonar
-          SONAR_JDBC_USERNAME: sonar
-          SONAR_JDBC_PASSWORD: sonar
         options: >-
           --health-cmd "curl -f http://localhost:9000/api/system/status || exit 1"
-          --health-interval 45s
-          --health-timeout 30s
-          --health-retries 15
-          --health-start-period 180s
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
     
     steps:
     - name: "📥 Checkout Code"
@@ -77,51 +61,15 @@ jobs:
 
     - name: "⏳ Wait for SonarQube to Start"
       run: |
-        echo "⏳ Waiting for SonarQube to be ready (this may take 3-5 minutes)..."
-        echo "📊 SonarQube startup typically requires significant memory and time"
-        
-        # First, let's check if the container is running
-        sleep 30
-        echo "🔍 Checking container status..."
-        docker ps | grep sonarqube || echo "No SonarQube container found yet"
-        
-        # Check logs for any immediate errors
-        echo "📋 Recent SonarQube logs:"
-        docker logs $(docker ps -q --filter ancestor=sonarqube:9.9-community) --tail 10 || echo "Could not fetch logs yet"
-        
-        # Wait with more patience and better feedback
-        for i in {1..120}; do
+        echo "⏳ Waiting for SonarQube to be ready..."
+        for i in {1..60}; do
           if curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
             echo "✅ SonarQube is ready!"
-            echo "📊 Final status check:"
-            curl -s http://localhost:9000/api/system/status || echo "Status check failed"
             break
           fi
-          
-          # Every 30 seconds, show progress and logs
-          if [ $((i % 30)) -eq 0 ]; then
-            MINUTES=$((i / 60))
-            echo "⏳ Still starting up... (${i}/120 - ${MINUTES} minutes elapsed)"
-            echo "🔍 Container status:"
-            docker ps | grep sonarqube || echo "Container not found"
-            echo "📋 Latest logs:"
-            docker logs $(docker ps -q --filter ancestor=sonarqube:9.9-community) --tail 5 2>/dev/null || echo "Could not fetch logs"
-            echo "💾 Memory usage:"
-            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep sonarqube || echo "Stats not available"
-          fi
-          
+          echo "⏳ Still starting up... (${i}/60)"
           sleep 5
         done
-        
-        # Final check
-        if ! curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
-          echo "❌ SonarQube failed to start within 10 minutes"
-          echo "📋 Full container logs:"
-          docker logs $(docker ps -q --filter ancestor=sonarqube:9.9-community) || echo "Could not fetch logs"
-          echo "🔍 Final container status:"
-          docker ps -a | grep sonarqube || echo "No container found"
-          exit 1
-        fi
 
     - name: "🔐 Configure SonarQube Authentication"
       run: |
@@ -274,7 +222,7 @@ jobs:
           echo "2. **Run the following commands in Codespaces terminal**:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "# Start SonarQube" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:9.9-community" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Wait 2-3 minutes, then run your analysis" >> $GITHUB_STEP_SUMMARY
           echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
@@ -294,7 +242,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🌐 Method 3: Local Docker Setup" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:9.9-community" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
           echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
           echo "# Login: admin/admin123, then run analysis as shown above" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
