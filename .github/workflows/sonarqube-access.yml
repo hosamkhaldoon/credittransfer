@@ -55,26 +55,86 @@ jobs:
       run: |
         echo "🔍 Running fresh SonarQube analysis..."
         
-        # Install scanner
-        dotnet tool install --global dotnet-sonarscanner || echo "Scanner already installed"
+        # Debug information
+        echo "📋 Environment Check:"
+        echo "SONAR_HOST_URL: $SONAR_HOST_URL"
+        echo "SONAR_PROJECT_KEY: $SONAR_PROJECT_KEY"
+        echo "DOTNET_VERSION: $DOTNET_VERSION"
+        echo "Current directory: $(pwd)"
         
-        # Run analysis
-        cd Migrated
+        # Verify SonarQube is accessible
+        echo "🔍 Checking SonarQube connectivity..."
+        if ! curl -s -f -o /dev/null "$SONAR_HOST_URL/api/system/status"; then
+          echo "❌ Error: Cannot connect to SonarQube at $SONAR_HOST_URL"
+          echo "Response from SonarQube:"
+          curl -v "$SONAR_HOST_URL/api/system/status" || true
+          exit 1
+        fi
+        echo "✅ SonarQube is accessible"
+        
+        # Install scanner with verbose output
+        echo "📦 Installing SonarScanner..."
+        dotnet tool install --global dotnet-sonarscanner --verbosity detailed || {
+          echo "⚠️ Scanner might be already installed, continuing..."
+        }
+        
+        # Verify scanner installation
+        echo "🔍 Verifying scanner installation..."
+        dotnet tool list --global
+        
+        # Change to solution directory
+        echo "📂 Changing to solution directory..."
+        cd Migrated || {
+          echo "❌ Error: Migrated directory not found"
+          ls -la
+          exit 1
+        }
+        
+        # Get version
+        echo "🏷️ Getting version information..."
         VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d)")
+        echo "Version: $VERSION"
+        
+        # Begin analysis with debug output
+        echo "🚀 Starting SonarQube analysis..."
+        set -x  # Enable command echo
         
         dotnet sonarscanner begin \
           /k:"$SONAR_PROJECT_KEY" \
           /n:"$SONAR_PROJECT_NAME" \
           /v:"$VERSION" \
           /d:sonar.host.url="$SONAR_HOST_URL" \
-          /d:sonar.token="$SONAR_TOKEN"
+          /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
+          /d:sonar.verbose=true \
+          /d:sonar.log.level="DEBUG"
         
-        dotnet build CreditTransfer.Modern.sln --configuration Release --verbosity minimal
+        # Build solution
+        echo "🔨 Building solution..."
+        dotnet build "$SOLUTION_FILE" \
+          --configuration Release \
+          --verbosity detailed
         
-        dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+        # End analysis
+        echo "📊 Completing SonarQube analysis..."
+        dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+        
+        set +x  # Disable command echo
+        
+        # Verify analysis results
+        echo "✅ Checking analysis status..."
+        sleep 10  # Give SonarQube time to process
+        
+        ANALYSIS_STATUS=$(curl -s -H "Authorization: Bearer ${{ secrets.SONAR_TOKEN }}" \
+          "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" || echo "Failed to get status")
+        
+        echo "Analysis Status Response: $ANALYSIS_STATUS"
         
         cd ..
-        echo "✅ Analysis completed!"
+        echo "✅ Analysis process completed!"
+      env:
+        DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+        DOTNET_CLI_TELEMETRY_OPTOUT: true
+        DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: 1
 
     - name: "🌐 Setup GitHub Codespaces Access"
       run: |
