@@ -69,7 +69,7 @@ jobs:
     
     services:
       sonarqube:
-        image: sonarqube:10-community
+        image: sonarqube:10.6-community
         ports:
           - 9000:9000
         env:
@@ -986,7 +986,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 💻 To View Detailed Results Locally:" >> $GITHUB_STEP_SUMMARY
         echo "```bash" >> $GITHUB_STEP_SUMMARY
-        echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
+        echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
         echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
         echo "# Login: admin/admin123" >> $GITHUB_STEP_SUMMARY
         echo "# Re-run analysis with project key: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY

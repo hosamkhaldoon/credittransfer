@@ -37,7 +37,7 @@ jobs:
     
     services:
       sonarqube:
-        image: sonarqube:10-community
+        image: sonarqube:10.6-community
         ports:
           - 9000:9000
         env:
@@ -222,7 +222,7 @@ jobs:
           echo "2. **Run the following commands in Codespaces terminal**:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "# Start SonarQube" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Wait 2-3 minutes, then run your analysis" >> $GITHUB_STEP_SUMMARY
           echo "cd Migrated" >> $GITHUB_STEP_SUMMARY
@@ -242,7 +242,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🌐 Method 3: Local Docker Setup" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10-community" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
           echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
           echo "# Login: admin/admin123, then run analysis as shown above" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
