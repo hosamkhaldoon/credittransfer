@@ -62,16 +62,6 @@ jobs:
         echo "DOTNET_VERSION: $DOTNET_VERSION"
         echo "Current directory: $(pwd)"
         
-        # Verify SonarQube is accessible
-        echo "🔍 Checking SonarQube connectivity..."
-        if ! curl -s -f -o /dev/null "$SONAR_HOST_URL/api/system/status"; then
-          echo "❌ Error: Cannot connect to SonarQube at $SONAR_HOST_URL"
-          echo "Response from SonarQube:"
-          curl -v "$SONAR_HOST_URL/api/system/status" || true
-          exit 1
-        fi
-        echo "✅ SonarQube is accessible"
-        
         # Install scanner with verbose output
         echo "📦 Installing SonarScanner..."
         dotnet tool install --global dotnet-sonarscanner --verbosity detailed || {
@@ -95,9 +85,27 @@ jobs:
         VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d)")
         echo "Version: $VERSION"
         
+        # Create SonarQube analysis properties file
+        echo "📝 Creating SonarQube analysis properties..."
+        cat > sonar-project.properties << EOF
+sonar.projectKey=$SONAR_PROJECT_KEY
+sonar.projectName=$SONAR_PROJECT_NAME
+sonar.projectVersion=$VERSION
+sonar.sources=.
+sonar.sourceEncoding=UTF-8
+sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml
+sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/*test*,**/*tests*
+sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*
+sonar.ssl.tlsversion=TLSv1.2
+sonar.ws.timeout=300
+EOF
+        
         # Begin analysis with debug output
         echo "🚀 Starting SonarQube analysis..."
         set -x  # Enable command echo
+        
+        # Set SSL verification options
+        export SONAR_SCANNER_OPTS="-Djavax.net.ssl.trustAll=true -Dsonar.ws.timeout=300 -Dsonar.host.url=$SONAR_HOST_URL"
         
         dotnet sonarscanner begin \
           /k:"$SONAR_PROJECT_KEY" \
@@ -106,7 +114,11 @@ jobs:
           /d:sonar.host.url="$SONAR_HOST_URL" \
           /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
           /d:sonar.verbose=true \
-          /d:sonar.log.level="DEBUG"
+          /d:sonar.log.level="DEBUG" \
+          /d:sonar.ws.timeout=300 \
+          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" \
+          /d:sonar.ssl.tlsversion=TLSv1.2 \
+          /d:sonar.sourceEncoding=UTF-8
         
         # Build solution
         echo "🔨 Building solution..."
@@ -116,7 +128,9 @@ jobs:
         
         # End analysis
         echo "📊 Completing SonarQube analysis..."
-        dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+        dotnet sonarscanner end \
+          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" \
+          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
         
         set +x  # Disable command echo
         
@@ -124,7 +138,10 @@ jobs:
         echo "✅ Checking analysis status..."
         sleep 10  # Give SonarQube time to process
         
-        ANALYSIS_STATUS=$(curl -s -H "Authorization: Bearer ${{ secrets.SONAR_TOKEN }}" \
+        # Use proper authentication header for status check
+        ANALYSIS_STATUS=$(curl -s \
+          -H "Authorization: Bearer ${{ secrets.SONAR_TOKEN }}" \
+          --insecure \
           "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" || echo "Failed to get status")
         
         echo "Analysis Status Response: $ANALYSIS_STATUS"
@@ -135,6 +152,7 @@ jobs:
         DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
         DOTNET_CLI_TELEMETRY_OPTOUT: true
         DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: 1
+        SONAR_SCANNER_OPTS: "-Djavax.net.ssl.trustAll=true -Dsonar.ws.timeout=300"
 
     - name: "🌐 Setup GitHub Codespaces Access"
       run: |
