@@ -66,7 +66,7 @@ namespace CreditTransfer.Core.Application.Services
         {
             return errorCode switch
             {
-                ErrorCodes.Success => "ErrorMessage_Success",
+                ErrorCodes.Success => "Message_Success",
                 ErrorCodes.UnknownSubscriber => "ErrorMessage_UnknownSubscriber",
                 ErrorCodes.SourceDestinationSame => "ErrorMessage_SourceDestinationSame",
                 ErrorCodes.InvalidPin => "ErrorMessage_InvalidPin",

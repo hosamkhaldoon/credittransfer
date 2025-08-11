@@ -714,6 +714,159 @@
 					"response": []
 				}
 			]
+		},
+		{
+			"name": "Web Handler Endpoints",
+			"item": [
+				{
+					"name": "Web Handler Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{web_handler_url}}/health",
+							"host": [
+								"{{web_handler_url}}"
+							],
+							"path": [
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "JWT Test - Authentication",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has token information', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('TokenAcquired');",
+									"    pm.expect(response.TokenAcquired).to.eql(true);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{web_handler_url}}/api/jwttest/test-auth",
+							"host": [
+								"{{web_handler_url}}"
+							],
+							"path": [
+								"api",
+								"jwttest",
+								"test-auth"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "JWT Test - Enhanced API Client",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has test results', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('TestResults');",
+									"    pm.expect(response.TestResults).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{web_handler_url}}/api/jwttest/test-enhanced-api",
+							"host": [
+								"{{web_handler_url}}"
+							],
+							"path": [
+								"api",
+								"jwttest",
+								"test-enhanced-api"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "XML Credit Transfer (USSD Format)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response is XML', function () {",
+									"    pm.expect(pm.response.headers.get('Content-Type')).to.include('xml');",
+									"});",
+									"",
+									"pm.test('Response contains umsprot structure', function () {",
+									"    const responseText = pm.response.text();",
+									"    pm.expect(responseText).to.include('<umsprot');",
+									"    pm.expect(responseText).to.include('<exec_rsp');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "data",
+									"value": "<?xml version=\"1.0\" encoding=\"UTF-8\" ?><umsprot version=\"1\"><exec_req><data name=\"SourceMsisdn\">96812345678</data><data name=\"DestinationMsisdn\">87654321</data><data name=\"AmountRiyal\">5</data><data name=\"AmountHalala\">0</data><data name=\"PIN\">1234</data></exec_req></umsprot>",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{web_handler_url}}/CreditTransferHandler.cs",
+							"host": [
+								"{{web_handler_url}}"
+							],
+							"path": [
+								"CreditTransferHandler.cs"
+							]
+						}
+					},
+					"response": []
+				}
+			]
 		}
 	],
 	"event": [
@@ -750,6 +903,11 @@
 		{
 			"key": "wcf_service_url",
 			"value": "http://localhost:5001",
+			"type": "string"
+		},
+		{
+			"key": "web_handler_url",
+			"value": "http://localhost:6003",
 			"type": "string"
 		}
 	]

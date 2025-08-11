@@ -60,7 +60,7 @@ namespace CreditTransfer.Services.RestApi.Controllers
         /// <param name="request">Credit transfer request</param>
         /// <returns>Transfer result with status code and message</returns>
         [HttpPost("transfer")]
-        [Authorize(Policy = "CreditTransferOperator")]
+        [Authorize(Policy = "CreditTransferUser")]
         [ProducesResponseType(typeof(CreditTransferApiResponse), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -134,7 +134,7 @@ namespace CreditTransfer.Services.RestApi.Controllers
         /// <param name="request">Credit transfer request with adjustment reason</param>
         /// <returns>Transfer result with status code and message</returns>
         [HttpPost("transfer-with-reason")]
-        [Authorize(Policy = "CreditTransferOperator")]
+        [Authorize(Policy = "CreditTransferUser")]
         [ProducesResponseType(typeof(CreditTransferApiResponse), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -226,7 +226,7 @@ namespace CreditTransfer.Services.RestApi.Controllers
         /// <param name="request">Credit transfer request without PIN</param>
         /// <returns>Transfer result with status code and message</returns>
         [HttpPost("transfer-without-pin")]
-        [Authorize(Policy = "CreditTransferOperator")]
+        [Authorize(Policy = "CreditTransferUser")]
         [ProducesResponseType(typeof(CreditTransferApiResponse), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]

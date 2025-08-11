@@ -15,6 +15,7 @@ namespace CreditTransfer.Services.WcfService;
 /// Enhanced with JWT authentication support
 /// </summary>
 [ServiceBehavior(InstanceContextMode = InstanceContextMode.PerCall)]
+[WcfBasicAuthenticationBehavior(requireAuthentication: false)]
 public class CreditTransferWcfService : ICreditTransferWcfService
 {
     private readonly ICreditTransferService _creditTransferService;

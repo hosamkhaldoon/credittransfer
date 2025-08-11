@@ -270,7 +270,8 @@ namespace CreditTransfer.Infrastructure.Data
                 new ApplicationConfig { Id = 526, Key = "ErrorMessage_BalancePercentageError", Value = "Your balance remaining should be more than 50%", Category = "ErrorMessages", Description = "Error message for code 40 - Balance percentage error", IsActive = true, CreatedDate = DateTime.UtcNow, CreatedBy = "System" },
                 new ApplicationConfig { Id = 527, Key = "ErrorMessage_CreditTransferServiceIsBlocked", Value = "Credit transfer service is blocked", Category = "ErrorMessages", Description = "Error message for code 41 - Credit transfer service is blocked", IsActive = true, CreatedDate = DateTime.UtcNow, CreatedBy = "System" },
                 new ApplicationConfig { Id = 528, Key = "ErrorMessage_OCSTimeout", Value = "OCS timeout occurred", Category = "ErrorMessages", Description = "Error message for code 42 - OCS timeout", IsActive = true, CreatedDate = DateTime.UtcNow, CreatedBy = "System" },
-                new ApplicationConfig { Id = 529, Key = "ErrorMessage_ExceedsMaxCapPerDay", Value = "Subscription has been reached the cap of transfers per day", Category = "ErrorMessages", Description = "Error message for code 43 - ExceedsMaxCapPerDay", IsActive = true, CreatedDate = DateTime.UtcNow, CreatedBy = "System" }
+                new ApplicationConfig { Id = 529, Key = "ErrorMessage_ExceedsMaxCapPerDay", Value = "Subscription has been reached the cap of transfers per day", Category = "ErrorMessages", Description = "Error message for code 43 - ExceedsMaxCapPerDay", IsActive = true, CreatedDate = DateTime.UtcNow, CreatedBy = "System" },
+                new ApplicationConfig { Id = 531, Key = "Message_Success", Value = "OK", Category = "Messages", Description = "message for code 0 - Success", IsActive = true, CreatedDate = DateTime.UtcNow, CreatedBy = "System" }
 
             };
 

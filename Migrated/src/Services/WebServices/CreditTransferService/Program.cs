@@ -14,6 +14,8 @@ using OpenTelemetry;
 using CreditTransfer.Core.Application.Interfaces;
 using CreditTransfer.Infrastructure.Repositories;
 using CreditTransfer.Core.Authentication.Services;
+using CreditTransfer.Core.Authentication.Models;
+using CreditTransfer.Core.Authentication.Configuration;
 using IntegrationProxies.Nobill.Interfaces;
 using IntegrationProxies.Nobill.Services;
 
@@ -104,17 +106,34 @@ builder.Services.AddServiceModelMetadata();
 // Add Credit Transfer services
 builder.Services.AddCreditTransferServices(builder.Configuration);
 
+// Add HTTP client factory for authentication services
+builder.Services.AddHttpClient();
+
 // Add Keycloak authentication and authorization
 builder.Services.AddKeycloak(builder.Configuration);
 
+// Configure authentication options for Basic auth
+builder.Services.Configure<BasicAuthenticationOptions>(builder.Configuration.GetSection("BasicAuthentication"));
+builder.Services.Configure<RoleMappingOptions>(builder.Configuration.GetSection("RoleMapping"));
+builder.Services.Configure<SecuritySettingsOptions>(builder.Configuration.GetSection("SecuritySettings"));
+
 // Register additional services (ICreditTransferService, repositories, etc. are registered by AddCreditTransferServices)
 builder.Services.AddScoped<ITokenValidationService, KeycloakTokenValidationService>();
+
+// Register authentication dependencies
+builder.Services.AddScoped<IKeycloakServiceAccountClient, KeycloakServiceAccountClient>();
+builder.Services.AddSingleton<IAuthenticationCache, InMemoryAuthenticationCache>();
+builder.Services.AddSingleton<IFailedAttemptTracker, InMemoryFailedAttemptTracker>();
+builder.Services.AddScoped<IBasicAuthenticationService, KeycloakBasicAuthenticationService>();
 
 // Add WCF service implementation - register both interface and concrete class
 builder.Services.AddScoped<ICreditTransferWcfService, CreditTransferWcfService>();
 builder.Services.AddScoped<CreditTransferWcfService>(); // CoreWCF needs the concrete class registered directly
 
 var app = builder.Build();
+
+// Set service provider for Basic authentication behavior
+WcfBasicAuthenticationBehavior.SetServiceProvider(app.Services);
 
 // Configure CoreWCF with JWT authentication support
 app.UseServiceModel(builder =>
@@ -136,9 +155,6 @@ app.UseServiceModel(builder =>
         
         //// Add JWT authentication behavior to the service
         //serviceOptions.Description.Behaviors.Add(new WcfJwtAuthenticationBehavior(requireAuthentication: false));
-        
-        //// Add service provider injection behavior
-        //serviceOptions.Description.Behaviors.Add(new ServiceProviderInjectionBehavior(app.Services));
     })
            .AddServiceEndpoint<CreditTransferWcfService, ICreditTransferWcfService>(binding, "/CreditTransferService.svc");
 });
@@ -217,3 +233,136 @@ app.MapGet("/", () => new {
 });
 
 app.Run();
+
+// Simple in-memory implementations for authentication services
+public class InMemoryAuthenticationCache : IAuthenticationCache
+{
+    private readonly Dictionary<string, AuthenticationResult> _cache = new();
+
+    public Task<AuthenticationResult?> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        _cache.TryGetValue(cacheKey, out var result);
+        return Task.FromResult(result);
+    }
+
+    public Task SetAsync(string cacheKey, AuthenticationResult result, TimeSpan? expiration = null, CancellationToken cancellationToken = default)
+    {
+        _cache[cacheKey] = result;
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        _cache.Remove(cacheKey);
+        return Task.CompletedTask;
+    }
+
+    public Task ClearUserCacheAsync(string username, CancellationToken cancellationToken = default)
+    {
+        var keysToRemove = _cache.Keys.Where(k => k.Contains(username)).ToList();
+        foreach (var key in keysToRemove)
+        {
+            _cache.Remove(key);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task ClearAllAsync(CancellationToken cancellationToken = default)
+    {
+        _cache.Clear();
+        return Task.CompletedTask;
+    }
+
+    public Task<Dictionary<string, object>> GetStatisticsAsync()
+    {
+        return Task.FromResult(new Dictionary<string, object>
+        {
+            ["CacheSize"] = _cache.Count
+        });
+    }
+
+    public string GenerateCacheKey(string username, string passwordHash)
+    {
+        return $"auth:{username}:{passwordHash}";
+    }
+
+    public string GenerateUserInfoCacheKey(string username)
+    {
+        return $"userinfo:{username}";
+    }
+}
+
+public class InMemoryFailedAttemptTracker : IFailedAttemptTracker
+{
+    private readonly Dictionary<string, List<FailedAttempt>> _failedAttempts = new();
+    private readonly Dictionary<string, DateTime> _lockouts = new();
+
+    public Task RecordFailedAttemptAsync(string username, string? ipAddress, AuthenticationFailureReason reason, CancellationToken cancellationToken = default)
+    {
+        if (!_failedAttempts.ContainsKey(username))
+            _failedAttempts[username] = new List<FailedAttempt>();
+
+        _failedAttempts[username].Add(new FailedAttempt
+        {
+            Username = username,
+            IpAddress = ipAddress,
+            Reason = reason,
+            Timestamp = DateTime.UtcNow
+        });
+
+        return Task.CompletedTask;
+    }
+
+    public Task<int> GetFailedAttemptCountAsync(string username, CancellationToken cancellationToken = default)
+    {
+        if (!_failedAttempts.ContainsKey(username))
+            return Task.FromResult(0);
+
+        var recentAttempts = _failedAttempts[username]
+            .Where(a => a.Timestamp > DateTime.UtcNow.AddHours(-1))
+            .Count();
+
+        return Task.FromResult(recentAttempts);
+    }
+
+    public Task<bool> IsUserLockedOutAsync(string username, CancellationToken cancellationToken = default)
+    {
+        if (!_lockouts.ContainsKey(username))
+            return Task.FromResult(false);
+
+        return Task.FromResult(_lockouts[username] > DateTime.UtcNow);
+    }
+
+    public Task ResetFailedAttemptsAsync(string username, CancellationToken cancellationToken = default)
+    {
+        _failedAttempts.Remove(username);
+        _lockouts.Remove(username);
+        return Task.CompletedTask;
+    }
+
+    public Task<DateTime?> GetLockoutEndTimeAsync(string username, CancellationToken cancellationToken = default)
+    {
+        if (!_lockouts.ContainsKey(username))
+            return Task.FromResult<DateTime?>(null);
+
+        return Task.FromResult<DateTime?>(_lockouts[username]);
+    }
+
+    public Task CleanupExpiredLockoutsAsync(CancellationToken cancellationToken = default)
+    {
+        var expiredUsers = _lockouts.Where(l => l.Value <= DateTime.UtcNow).Select(l => l.Key).ToList();
+        foreach (var user in expiredUsers)
+        {
+            _lockouts.Remove(user);
+        }
+        return Task.CompletedTask;
+    }
+
+    private class FailedAttempt
+    {
+        public string Username { get; set; } = string.Empty;
+        public string? IpAddress { get; set; }
+        public AuthenticationFailureReason Reason { get; set; }
+        public DateTime Timestamp { get; set; }
+    }
+}

@@ -5,6 +5,7 @@ using CoreWCF.Dispatcher;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using CreditTransfer.Core.Authentication.Services;
+using CreditTransfer.Core.Authentication.Models;
 using System.Diagnostics;
 
 namespace CreditTransfer.Services.WcfService;
@@ -377,17 +378,7 @@ public class JwtMessageInspector : IDispatchMessageInspector
     }
 }
 
-/// <summary>
-/// Authentication context to store user information
-/// </summary>
-public class AuthenticationContext
-{
-    public bool IsAuthenticated { get; set; }
-    public string Username { get; set; } = string.Empty;
-    public string? UserId { get; set; }
-    public List<string> Roles { get; set; } = new();
-    public System.Security.Claims.ClaimsPrincipal? Principal { get; set; }
-}
+
 
 /// <summary>
 /// Extension to store authentication context in operation context

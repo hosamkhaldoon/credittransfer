@@ -68,22 +68,25 @@ namespace CreditTransfer.Core.Application.Tests
 
         private void SetupDefaultConfiguration()
         {
-            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<List<int>>("CreditTransfer_MsisdnLength", new List<int>()))
+            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<List<int>>("CreditTransfer_MsisdnLength", It.IsAny<List<int>>()))
                 .ReturnsAsync(new List<int> { 11 });
             
-            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<int>("CreditTransfer_RefillPinLength", 0))
+            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<int>("CreditTransfer_RefillPinLength", It.IsAny<int>()))
                 .ReturnsAsync(4);
             
-            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<bool>("CreditTransfer_EnableExtendedDays", false))
+            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<bool>("CreditTransfer_EnableExtendedDays", It.IsAny<bool>()))
                 .ReturnsAsync(false);
             
-            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<string>("CreditTransfer_DefaultPIN", ""))
+            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<string>("CreditTransfer_DefaultPIN", It.IsAny<string>()))
                 .ReturnsAsync("0000");
             
-            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<decimal>("CreditTransfer_MaximumPercentageAmount", 0m))
+            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<decimal>("CreditTransfer_MaximumPercentageAmount", It.IsAny<decimal>()))
                 .ReturnsAsync(1.0m);
             
-            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<string>("Country", ""))
+            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<string>("CreditTransfer_CustomerToCustomerTransferMoneyReason", It.IsAny<string>()))
+                .ReturnsAsync("Credit transfer");
+            
+            _mockConfigRepository.Setup(x => x.GetConfigValueAsync<string>("Country", It.IsAny<string>()))
                 .ReturnsAsync("OM");
         }
 
@@ -112,6 +115,7 @@ namespace CreditTransfer.Core.Application.Tests
             _mockSubscriptionRepository.Setup(x => x.GetAccountTypeAsync(It.IsAny<string>()))
                 .ReturnsAsync(SubscriptionType.Customer);
 
+            // Setup TransferRulesService with default allow behavior
             _mockTransferRulesService.Setup(x => x.EvaluateTransferRuleAsync(It.IsAny<string>(), It.IsAny<SubscriptionType>(), It.IsAny<SubscriptionType>(), It.IsAny<Dictionary<string, string>>()))
                 .ReturnsAsync((true, 0, "Transfer allowed"));
 
@@ -160,6 +164,8 @@ namespace CreditTransfer.Core.Application.Tests
                 .ReturnsAsync("Source phone number not found");
             _mockErrorConfigService.Setup(x => x.GetErrorMessageAsync(ErrorCodes.DestinationPhoneNotFound))
                 .ReturnsAsync("Destination phone number not found");
+            _mockErrorConfigService.Setup(x => x.GetErrorMessageAsync(ErrorCodes.NotAllowedToTransfer))
+                .ReturnsAsync("Transfer not allowed by business rules");
         }
 
         #region Category 1: Parameter Validation Tests
@@ -293,8 +299,8 @@ namespace CreditTransfer.Core.Application.Tests
         [Fact]
         public async Task ValidateTransferInputs_Should_Return_BusinessRule_Error_When_Transfer_Not_Allowed()
         {
-            // Arrange
-            _mockTransferRulesService.Setup(x => x.EvaluateTransferRuleAsync("OM", SubscriptionType.Customer, SubscriptionType.Customer, It.IsAny<Dictionary<string, string>>()))
+            // Arrange - Override the default TransferRulesService behavior for this specific test
+            _mockTransferRulesService.Setup(x => x.EvaluateTransferRuleAsync(It.IsAny<string>(), It.IsAny<SubscriptionType>(), It.IsAny<SubscriptionType>(), It.IsAny<Dictionary<string, string>>()))
                 .ReturnsAsync((false, 33, "Transfer not allowed by business rules"));
 
             // Act
@@ -303,6 +309,10 @@ namespace CreditTransfer.Core.Application.Tests
             // Assert
             result.statusCode.Should().Be(33, "Should return business rule error code");
             result.statusMessage.Should().Contain("Transfer not allowed by business rules");
+            
+            // Verify the mock was called
+            _mockTransferRulesService.Verify(x => x.EvaluateTransferRuleAsync(It.IsAny<string>(), It.IsAny<SubscriptionType>(), It.IsAny<SubscriptionType>(), It.IsAny<Dictionary<string, string>>()), 
+                Times.Once, "TransferRulesService should be called once");
         }
 
         [Fact]

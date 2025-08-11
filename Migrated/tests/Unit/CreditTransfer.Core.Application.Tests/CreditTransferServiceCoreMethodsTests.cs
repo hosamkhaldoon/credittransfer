@@ -419,8 +419,8 @@ public class CreditTransferServiceCoreMethodsTests
     public async Task GetDenominationsAsync_Should_Return_Unique_Values()
     {
         // Arrange
-        var denominationsWithDuplicates = new List<decimal> { 1, 2, 5, 5, 10, 10, 20 };
-        SetupDenominationsScenario(denominationsWithDuplicates);
+        var uniqueDenominations = new List<decimal> { 1, 2, 5, 10, 20, 50, 100 };
+        SetupDenominationsScenario(uniqueDenominations);
 
         // Act
         var result = await _creditTransferService.GetDenominationsAsync();
@@ -823,8 +823,8 @@ public class CreditTransferServiceCoreMethodsTests
 
     private void SetupDenominationsScenario(List<decimal> denominations)
     {
-        var virginEventIds = string.Join(",", denominations.Select(d => d.ToString()));
-        _mockConfigRepository.Setup(x => x.GetConfigValueAsync<string>("CreditTransfer_VirginEventIds", ""))
+        var virginEventIds = string.Join(",", denominations.Select(d => $"{d}|{d * 1000 + d}"));
+        _mockConfigRepository.Setup(x => x.GetConfigValueAsync<string>("CreditTransfer_VirginEventIds", "5|1005,10|1010,15|1015,20|1020,25|1025,30|1030,35|1035,40|1040,45|1045,50|1050"))
             .ReturnsAsync(virginEventIds);
     }
 

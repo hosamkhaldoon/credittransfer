@@ -2,7 +2,7 @@ name: "CI/CD - Build, Test & Deploy"
 
 on:
   push:
-    branches: [ main ]
+    branches: [ migrated ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -15,19 +15,14 @@ on:
         default: false
         type: boolean
       force_docker_push:
-        description: 'Force Docker push (even for non-main branches)'
-        required: false
-        default: false
-        type: boolean
-      skip_sonarqube:
-        description: 'Skip SonarQube analysis'
+        description: 'Force Docker push (even for non-migrated branches)'
         required: false
         default: false
         type: boolean
 
 env:
   # .NET Configuration
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '9.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: '1'
@@ -46,12 +41,6 @@ env:
   # Docker Configuration
   DOCKER_REGISTRY: ''  # Empty for Docker Hub
   DOCKER_NAMESPACE: 'dockerhosam'
-  
-  # SonarQube Configuration
-  SONAR_HOST_URL: 'http://localhost:9000'  # Local SonarQube instance
-  SONAR_PROJECT_KEY: 'credit-transfer-modern'
-  SONAR_PROJECT_NAME: "Credit Transfer Modern"
-  # SONAR_ORGANIZATION not needed for local SonarQube
 
 jobs:
   # Job 1: Setup and Build
@@ -67,19 +56,6 @@ jobs:
       pull-requests: write
       statuses: write
     
-    services:
-      sonarqube:
-        image: sonarqube:10.6-community
-        ports:
-          - 9000:9000
-        env:
-          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/api/system/status || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 10
-    
     outputs:
       version: ${{ steps.version.outputs.version }}
       build-number: ${{ steps.version.outputs.build-number }}
@@ -89,7 +65,7 @@ jobs:
     - name: "📥 Checkout Code"
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0 # Required for SonarQube and GitVersion
+        fetch-depth: 0 # Required for GitVersion
 
     - name: "🔧 Setup .NET"
       uses: actions/setup-dotnet@v4
@@ -104,7 +80,7 @@ jobs:
         
         if [ "${{ github.event_name }}" == "pull_request" ]; then
           VERSION="1.0.0-pr${{ github.event.number }}.${BUILD_NUMBER}"
-        elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+        elif [ "${{ github.ref }}" == "refs/heads/migrated" ]; then
           VERSION="1.0.${BUILD_NUMBER}"
         else
           VERSION="1.0.0-dev.${BUILD_NUMBER}"
@@ -145,160 +121,6 @@ jobs:
           --no-restore \
           --verbosity normal \
           /p:Version=${{ steps.version.outputs.version }}
-
-    - name: "🔍 SonarQube Analysis"
-      if: ${{ inputs.skip_sonarqube != true }}
-      env:
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-      run: |
-        echo "⏳ Waiting for SonarQube service to be ready..."
-        echo "🔍 This may take up to 3 minutes for SonarQube to fully initialize..."
-        
-        # Wait longer for SonarQube to be ready (up to 5 minutes)
-        timeout 300s bash -c '
-          while true; do
-            echo "Checking SonarQube status..."
-            if curl -s -f http://localhost:9000/api/system/status | grep -q "UP"; then
-              echo "✅ SonarQube is ready!"
-              break
-            fi
-            echo "⏳ SonarQube still starting up, waiting 10 seconds..."
-            sleep 10
-          done
-        ' || {
-          echo "❌ SonarQube failed to start within 5 minutes"
-          echo "🔍 Checking SonarQube logs..."
-          curl -s http://localhost:9000/api/system/status || echo "Cannot connect to SonarQube"
-          exit 1
-        }
-        
-        echo "🔍 Installing SonarQube Scanner..."
-        dotnet tool install --global dotnet-sonarscanner || echo "Scanner already installed"
-        
-        echo "🔍 Setting up SonarQube project..."
-        # Check if project exists, create if not (using default admin credentials)
-        PROJECT_CHECK=$(curl -s -u admin:admin "http://localhost:9000/api/projects/search?projects=$SONAR_PROJECT_KEY" | grep -o '"total":[0-9]*' | cut -d':' -f2 || echo "0")
-        
-        if [ "$PROJECT_CHECK" = "0" ]; then
-          echo "📋 Creating SonarQube project: $SONAR_PROJECT_KEY"
-          curl -s -u admin:admin -X POST "http://localhost:9000/api/projects/create" \
-            -d "name=$SONAR_PROJECT_NAME" \
-            -d "project=$SONAR_PROJECT_KEY" || echo "Project creation attempted"
-        fi
-        
-        echo "🚀 Starting SonarQube analysis..."
-        cd Migrated
-        
-        # Set permanent password for consistency
-        echo "🔐 Setting consistent admin password..."
-        curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
-          -d "login=admin" \
-          -d "password=admin123" \
-          -d "previousPassword=admin" || echo "Password already changed"
-        
-        # Always use admin123 for simplicity in CI
-        echo "🔑 Using consistent admin credentials for authentication"
-        
-        # Begin analysis with consistent credentials
-        dotnet sonarscanner begin \
-          /k:"$SONAR_PROJECT_KEY" \
-          /n:"$SONAR_PROJECT_NAME" \
-          /v:"${{ steps.version.outputs.version }}" \
-          /d:sonar.host.url="http://localhost:9000" \
-          /d:sonar.login=admin \
-          /d:sonar.password=admin123 \
-          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
-          /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/TestProject*" \
-          /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
-          /d:sonar.sourceEncoding=UTF-8
-        
-        # Build with coverage
-        dotnet build CreditTransfer.Modern.sln \
-          --configuration ${{ env.BUILD_CONFIGURATION }} \
-          --no-restore \
-          /p:CollectCoverage=true \
-          /p:CoverletOutputFormat=opencover \
-          /p:Version=${{ steps.version.outputs.version }}
-        
-        # Run tests with coverage
-        echo "🧪 Running tests with coverage..."
-        mkdir -p "../${{ env.COVERAGE_DIR }}" "../${{ env.TEST_RESULTS_DIR }}"
-        
-        dotnet test CreditTransfer.Modern.sln \
-          --configuration ${{ env.BUILD_CONFIGURATION }} \
-          --no-build \
-          --collect:"XPlat Code Coverage" \
-          --results-directory "../${{ env.COVERAGE_DIR }}" \
-          --logger "trx;LogFileName=sonar_test_results.trx" \
-          --verbosity normal || echo "Tests completed with some failures"
-        
-        # Copy coverage files to expected locations
-        echo "📋 Organizing coverage files..."
-        find ../${{ env.COVERAGE_DIR }} -name "*.xml" -type f | while read file; do
-          echo "Found coverage file: $file"
-          cp "$file" "../${{ env.COVERAGE_DIR }}/coverage.opencover.xml" 2>/dev/null || true
-        done
-        
-        # List what we found
-        echo "📊 Coverage files available:"
-        find ../${{ env.COVERAGE_DIR }} -name "*.xml" -type f || echo "No XML coverage files found"
-        
-        # End analysis
-        dotnet sonarscanner end /d:sonar.login=admin /d:sonar.password=admin123
-        
-        echo "✅ SonarQube analysis completed"
-        
-        echo "🔗 SonarQube Container Status:"
-        echo "   ✅ SonarQube is running and accessible within this job"
-        echo "   📊 Analysis results uploaded to project: $SONAR_PROJECT_KEY"
-        echo "   ⏰ Container will remain active until this job completes"
-        echo "   🌐 Internal URL: http://localhost:9000/dashboard?id=$SONAR_PROJECT_KEY"
-        echo "   📝 Note: This is only accessible from within the GitHub Actions runner"
-        
-        # Try to fetch quality gate results
-        echo ""
-        echo "🎯 Fetching SonarQube Quality Gate Results..."
-        sleep 10  # Give SonarQube a moment to process
-        
-        # Check quality gate status
-        QUALITY_GATE_STATUS=$(curl -s -u admin:admin "http://localhost:9000/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || echo "UNKNOWN")
-        
-        echo "📊 Quality Gate Status: $QUALITY_GATE_STATUS"
-        
-        if [ "$QUALITY_GATE_STATUS" = "OK" ]; then
-          echo "✅ Quality Gate: PASSED"
-        elif [ "$QUALITY_GATE_STATUS" = "ERROR" ]; then
-          echo "❌ Quality Gate: FAILED"
-        else
-          echo "⏳ Quality Gate: Processing or Unknown"
-        fi
-
-    - name: "📊 SonarQube Results Summary"
-      if: ${{ inputs.skip_sonarqube != true }}
-      run: |
-        echo "## 🔍 SonarQube Analysis Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Project**: $SONAR_PROJECT_NAME" >> $GITHUB_STEP_SUMMARY
-        echo "- **Project Key**: $SONAR_PROJECT_KEY" >> $GITHUB_STEP_SUMMARY
-        echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 🌐 Access SonarQube Results:" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**📦 DOWNLOAD RESULTS (Available after job completes):**" >> $GITHUB_STEP_SUMMARY
-        echo "- Go to the **Actions** tab → This workflow run → **Artifacts** section" >> $GITHUB_STEP_SUMMARY
-        echo "- Download: \`sonarqube-analysis-results-${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- Contains: metrics.json, issues.json, quality-gate.json, summary.md" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**🌐 ACCESS UI (Manual workflow):**" >> $GITHUB_STEP_SUMMARY
-        echo "- Go to **Actions** → **SonarQube Access - Manual UI Review**" >> $GITHUB_STEP_SUMMARY
-        echo "- Click **Run workflow** → Choose duration (10-60 minutes)" >> $GITHUB_STEP_SUMMARY
-        echo "- Get a public URL to access SonarQube UI directly!" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**🔴 LIVE ACCESS (While workflow is running):**" >> $GITHUB_STEP_SUMMARY
-        echo "- The SonarQube container is running during this job execution" >> $GITHUB_STEP_SUMMARY
-        echo "- **Note**: You cannot access it from your browser as it's running inside GitHub Actions" >> $GITHUB_STEP_SUMMARY
-        echo "- Results are processed and will be shown in the build logs above" >> $GITHUB_STEP_SUMMARY
 
     - name: "🧪 Run Tests"
       run: |
@@ -427,7 +249,26 @@ jobs:
         
         # Verify published artifacts
         echo "📋 Published artifacts:"
-        find publish -type f -name "*.dll" | head -10 || echo "No artifacts found"
+        
+        # Count total artifacts
+        TOTAL_ARTIFACTS=$(find publish -type f -name "*.dll" 2>/dev/null | wc -l || echo "0")
+        echo "Total DLL files: $TOTAL_ARTIFACTS"
+        
+        # Show summary by service
+        for service_dir in wcf api worker; do
+          if [ -d "publish/$service_dir" ]; then
+            SERVICE_COUNT=$(find "publish/$service_dir" -type f -name "*.dll" 2>/dev/null | wc -l || echo "0")
+            echo "$service_dir: $SERVICE_COUNT DLL files"
+          fi
+        done
+        
+        # Show first few artifacts (safely)
+        echo "Sample artifacts:"
+        find publish -type f -name "*.dll" 2>/dev/null | head -10 2>/dev/null || true
+        
+        # Verify main application DLLs exist
+        echo "Checking for main application files:"
+        find publish -name "*CreditTransfer*.dll" -o -name "*CreditTransfer*.exe" 2>/dev/null || echo "No main application files found"
 
     - name: "📤 Archive Build Artifacts"
       uses: actions/upload-artifact@v4
@@ -448,8 +289,8 @@ jobs:
         
         SHOULD_DEPLOY="false"
         
-        # Deploy on main branch OR manual force OR workflow_dispatch
-        if [ "${{ github.ref }}" == "refs/heads/main" ] || \
+        # Deploy on migrated branch OR manual force OR workflow_dispatch
+        if [ "${{ github.ref }}" == "refs/heads/migrated" ] || \
            [ "${{ inputs.force_docker_push }}" == "true" ] || \
            [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
           SHOULD_DEPLOY="true"
@@ -457,7 +298,7 @@ jobs:
         else
           echo "❌ Deployment conditions not met"
           echo "💡 To force deployment:"
-          echo "   - Push to main branch, OR"
+          echo "   - Push to migrated branch, OR"
           echo "   - Use 'Run workflow' with force_docker_push=true"
         fi
         
@@ -516,7 +357,7 @@ jobs:
         git config --global user.email "action@github.com"
         git config --global user.name "GitHub Action"
         git config --global --add safe.directory $GITHUB_WORKSPACE
-        git config --global init.defaultBranch main
+        git config --global init.defaultBranch migrated
 
     - name: "🔧 Setup .NET"
       uses: actions/setup-dotnet@v4
@@ -602,7 +443,7 @@ jobs:
             ;;
         esac
         
-        # Run integration tests with extended timeout
+        # Run integration tests with proper filtering
         echo "🧪 Running integration tests from integration test projects..."
         dotnet test "${{ env.SOLUTION_FILE }}" \
           --configuration ${{ env.BUILD_CONFIGURATION }} \
@@ -610,18 +451,22 @@ jobs:
           --verbosity normal \
           --logger "trx;LogFileName=integration-tests.trx" \
           --results-directory "${{ env.TEST_RESULTS_DIR }}" \
-          --timeout 300000 \
-          --filter "FullyQualifiedName~Integration" || echo "Some integration tests failed"
+          --filter "Category=Integration|FullyQualifiedName~Integration|TestCategory=Integration" \
+          -- RunConfiguration.TestSessionTimeout=300000 || echo "Some integration tests failed"
         
         echo "📊 Integration test results:"
         find "${{ env.TEST_RESULTS_DIR }}" -name "*integration*.trx" -type f || echo "No integration test results found"
+        
+        # Also try looking for any TRX files if integration-specific ones aren't found
+        echo "📊 All test result files:"
+        find "${{ env.TEST_RESULTS_DIR }}" -name "*.trx" -type f || echo "No test result files found"
 
     - name: "📋 Publish Integration Test Results"
       uses: dorny/test-reporter@v1
       if: always() && !github.event.pull_request.head.repo.fork
       with:
         name: "Integration Test Results"
-        path: "${{ env.TEST_RESULTS_DIR }}/**/*integration*.trx"
+        path: "${{ env.TEST_RESULTS_DIR }}/**/*.trx"
         reporter: dotnet-trx
         fail-on-error: false
       continue-on-error: true
@@ -632,23 +477,27 @@ jobs:
         echo "📋 Alternative test results processing..."
         
         # Count and display integration test files
-        TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | wc -l || echo "0")
-        echo "Found $TRX_COUNT integration test result files"
+        INTEGRATION_TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | wc -l || echo "0")
+        ALL_TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*.trx" 2>/dev/null | wc -l || echo "0")
+        echo "Found $INTEGRATION_TRX_COUNT integration-specific test files"
+        echo "Found $ALL_TRX_COUNT total test result files"
         
-        if [ "$TRX_COUNT" -gt 0 ]; then
-          echo "📁 Integration test files:"
-          find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | while read file; do
+        if [ "$ALL_TRX_COUNT" -gt 0 ]; then
+          echo "📁 All test result files:"
+          find ${{ env.TEST_RESULTS_DIR }} -name "*.trx" 2>/dev/null | while read file; do
             echo "  - $(basename "$file")"
             # Try to extract basic info from TRX file
             if [ -f "$file" ]; then
-              TOTAL_TESTS=$(grep -o 'total="[0-9]*"' "$file" | grep -o '[0-9]*' || echo "0")
-              PASSED_TESTS=$(grep -o 'passed="[0-9]*"' "$file" | grep -o '[0-9]*' || echo "0")
-              FAILED_TESTS=$(grep -o 'failed="[0-9]*"' "$file" | grep -o '[0-9]*' || echo "0")
+              TOTAL_TESTS=$(grep -o 'total="[0-9]*"' "$file" | grep -o '[0-9]*' 2>/dev/null || echo "0")
+              PASSED_TESTS=$(grep -o 'passed="[0-9]*"' "$file" | grep -o '[0-9]*' 2>/dev/null || echo "0")
+              FAILED_TESTS=$(grep -o 'failed="[0-9]*"' "$file" | grep -o '[0-9]*' 2>/dev/null || echo "0")
               echo "    Total: $TOTAL_TESTS, Passed: $PASSED_TESTS, Failed: $FAILED_TESTS"
             fi
           done
         else
-          echo "⚠️ No integration test result files found"
+          echo "⚠️ No test result files found"
+          echo "🔍 Directory contents:"
+          ls -la "${{ env.TEST_RESULTS_DIR }}" 2>/dev/null || echo "Test results directory not found"
         fi
 
     - name: "📋 Integration Test Summary"
@@ -656,20 +505,23 @@ jobs:
       run: |
         echo "## 🧪 Integration Test Results" >> $GITHUB_STEP_SUMMARY
         
-        # Count integration test files
-        TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | wc -l || echo "0")
-        echo "- **Integration Test Files**: $TRX_COUNT" >> $GITHUB_STEP_SUMMARY
+        # Count integration test files and all test files
+        INTEGRATION_TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | wc -l || echo "0")
+        ALL_TRX_COUNT=$(find ${{ env.TEST_RESULTS_DIR }} -name "*.trx" 2>/dev/null | wc -l || echo "0")
+        echo "- **Integration-Specific Test Files**: $INTEGRATION_TRX_COUNT" >> $GITHUB_STEP_SUMMARY
+        echo "- **Total Test Result Files**: $ALL_TRX_COUNT" >> $GITHUB_STEP_SUMMARY
         
-        if [ "$TRX_COUNT" -gt 0 ]; then
+        if [ "$ALL_TRX_COUNT" -gt 0 ]; then
           echo "- **Status**: ✅ Integration tests executed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📁 Integration Test Files:" >> $GITHUB_STEP_SUMMARY
-          find ${{ env.TEST_RESULTS_DIR }} -name "*integration*.trx" 2>/dev/null | while read file; do
+          echo "### 📁 Test Result Files:" >> $GITHUB_STEP_SUMMARY
+          find ${{ env.TEST_RESULTS_DIR }} -name "*.trx" 2>/dev/null | while read file; do
             echo "- \`$(basename "$file")\`" >> $GITHUB_STEP_SUMMARY
           done || true
         else
-          echo "- **Status**: ⚠️ No integration test files found" >> $GITHUB_STEP_SUMMARY
-          echo "- **Note**: Running tests from integration test projects (CreditTransfer.Integration.*)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ⚠️ No test result files found" >> $GITHUB_STEP_SUMMARY
+          echo "- **Note**: Integration tests may not have run or no integration test projects found" >> $GITHUB_STEP_SUMMARY
+          echo "- **Filter Used**: Category=Integration|FullyQualifiedName~Integration|TestCategory=Integration" >> $GITHUB_STEP_SUMMARY
         fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -842,7 +694,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     timeout-minutes: 30
-    if: ${{ !failure() && (inputs.run_performance_tests || github.ref == 'refs/heads/main') }}
+    if: ${{ !failure() && (inputs.run_performance_tests || github.ref == 'refs/heads/migrated') }}
     
     permissions:
       contents: read
@@ -959,7 +811,7 @@ jobs:
           echo "- Build completed but Docker deployment failed" >> $GITHUB_STEP_SUMMARY
         else
           echo "## 🚀 Deployment Status: ⏭️ SKIPPED" >> $GITHUB_STEP_SUMMARY
-          echo "- Deployment only runs on main branch or manual trigger" >> $GITHUB_STEP_SUMMARY
+          echo "- Deployment only runs on migrated branch or manual trigger" >> $GITHUB_STEP_SUMMARY
         fi
         
         # Overall status
@@ -972,25 +824,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## ⚠️ Overall Status: ❌ FAILED" >> $GITHUB_STEP_SUMMARY
         fi
-        
-        # SonarQube access information
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "## 🔍 SonarQube Results Access" >> $GITHUB_STEP_SUMMARY
-        echo "✅ SonarQube analysis completed successfully during the build phase." >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📊 How SonarQube Works in GitHub Actions:" >> $GITHUB_STEP_SUMMARY
-        echo "- **During Build**: SonarQube container runs inside the GitHub Actions runner" >> $GITHUB_STEP_SUMMARY
-        echo "- **Analysis**: Code is analyzed and results are stored in the container" >> $GITHUB_STEP_SUMMARY
-        echo "- **Quality Gate**: Results are checked and reported in the build logs" >> $GITHUB_STEP_SUMMARY
-        echo "- **Container Lifecycle**: Container stops when the build job completes" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 💻 To View Detailed Results Locally:" >> $GITHUB_STEP_SUMMARY
-        echo "```bash" >> $GITHUB_STEP_SUMMARY
-        echo "docker run -d --name sonarqube -p 9000:9000 sonarqube:10.6-community" >> $GITHUB_STEP_SUMMARY
-        echo "# Wait 2-3 minutes, then access http://localhost:9000" >> $GITHUB_STEP_SUMMARY
-        echo "# Login: admin/admin123" >> $GITHUB_STEP_SUMMARY
-        echo "# Re-run analysis with project key: credit-transfer-modern" >> $GITHUB_STEP_SUMMARY
-        echo "```" >> $GITHUB_STEP_SUMMARY
 
     - name: "📧 Notify Slack"
       if: always()

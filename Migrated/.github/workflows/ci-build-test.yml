@@ -1,0 +1,358 @@
+name: "CI - Build & Test"
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
+      - '!.github/workflows/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      run_performance_tests:
+        description: 'Run performance tests'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Build configuration
+  BUILD_CONFIGURATION: Release
+  # Test configuration
+  COLLECT_COVERAGE: true
+  COVERAGE_THRESHOLD: 80
+
+jobs:
+  # Job 1: Build and validate solution
+  build:
+    name: "Build Solution"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build-number: ${{ steps.version.outputs.build-number }}
+    
+    steps:
+    - name: "📥 Checkout Code"
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Required for GitVersion
+
+    - name: "🔧 Setup .NET"
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: "📊 Generate Version"
+      id: version
+      run: |
+        BUILD_NUMBER=${GITHUB_RUN_NUMBER}
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          VERSION="1.0.0-pr${{ github.event.number }}.${BUILD_NUMBER}"
+        elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+          VERSION="1.0.${BUILD_NUMBER}"
+        else
+          VERSION="1.0.0-dev.${BUILD_NUMBER}"
+        fi
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "build-number=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+        echo "Generated version: ${VERSION}"
+
+    - name: "📦 Cache NuGet Packages"
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: "🔄 Restore Dependencies"
+      run: dotnet restore CreditTransfer.Modern.sln --verbosity minimal
+
+    - name: "🏗️ Build Solution"
+      run: |
+        dotnet build CreditTransfer.Modern.sln \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --no-restore \
+          --verbosity minimal \
+          -p:Version=${{ steps.version.outputs.version }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.version }} \
+          -p:FileVersion=${{ steps.version.outputs.version }}
+
+    - name: "📋 List Build Outputs"
+      run: |
+        echo "=== Build Artifacts ==="
+        find . -name "*.dll" -path "*/bin/${{ env.BUILD_CONFIGURATION }}/*" | head -20
+        echo "=== Test Projects ==="
+        find . -name "*Test*.csproj" -o -name "*.Tests.csproj" | head -10
+
+  # Job 2: Run Unit Tests
+  unit-tests:
+    name: "Unit Tests"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    
+    steps:
+    - name: "📥 Checkout Code"
+      uses: actions/checkout@v4
+
+    - name: "🔧 Setup .NET"
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: "📦 Cache NuGet Packages"
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: "🔄 Restore Dependencies"
+      run: dotnet restore CreditTransfer.Modern.sln --verbosity minimal
+
+    - name: "🧪 Run Unit Tests"
+      run: |
+        dotnet test CreditTransfer.Modern.sln \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --no-build \
+          --no-restore \
+          --verbosity minimal \
+          --logger "trx;LogFileName=unit-tests.trx" \
+          --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true" \
+          --collect:"XPlat Code Coverage" \
+          --results-directory ./test-results \
+          --filter "Category!=Integration&Category!=Performance&Category!=Security" \
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+    - name: "📊 Generate Coverage Report"
+      uses: danielpalme/ReportGenerator-GitHub-Action@5.3.8
+      if: always()
+      with:
+        reports: 'test-results/**/coverage.cobertura.xml'
+        targetdir: 'coverage-report'
+        reporttypes: 'HtmlInline_AzurePipelines;Cobertura;MarkdownSummaryGithub'
+        verbosity: 'Info'
+        title: 'CreditTransfer.Modern - Unit Test Coverage'
+
+    - name: "📈 Upload Coverage to Codecov"
+      uses: codecov/codecov-action@v4
+      if: always()
+      with:
+        file: coverage-report/Cobertura.xml
+        flags: unittests
+        name: unit-tests
+        fail_ci_if_error: false
+
+    - name: "📋 Publish Test Results"
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: "Unit Test Results"
+        path: "test-results/*.trx"
+        reporter: dotnet-trx
+
+    - name: "📊 Coverage Summary"
+      if: always()
+      run: |
+        if [ -f "coverage-report/Summary.md" ]; then
+          cat coverage-report/Summary.md >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Coverage report not generated" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Job 3: Run Integration Tests
+  integration-tests:
+    name: "Integration Tests"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: credittransfer_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          SA_PASSWORD: Test123!@#
+          ACCEPT_EULA: Y
+        options: >-
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Test123!@# -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 1433:1433
+
+    steps:
+    - name: "📥 Checkout Code"
+      uses: actions/checkout@v4
+
+    - name: "🔧 Setup .NET"
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: "📦 Cache NuGet Packages"
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: "🔄 Restore Dependencies"
+      run: dotnet restore CreditTransfer.Modern.sln --verbosity minimal
+
+    - name: "🏗️ Build Solution"
+      run: |
+        dotnet build CreditTransfer.Modern.sln \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --no-restore \
+          --verbosity minimal
+
+    - name: "🗄️ Setup Test Databases"
+      run: |
+        # Wait for services to be ready
+        sleep 10
+        
+        # Test PostgreSQL connection
+        PGPASSWORD=postgres psql -h localhost -U postgres -d credittransfer_test -c "SELECT version();"
+        
+        # Test SQL Server connection (if available)
+        timeout 30s bash -c 'until sqlcmd -S localhost -U sa -P "Test123!@#" -Q "SELECT @@VERSION"; do sleep 1; done' || echo "SQL Server not available"
+
+    - name: "🧪 Run Integration Tests"
+      env:
+        ConnectionStrings__DefaultConnection: "Host=localhost;Database=credittransfer_test;Username=postgres;Password=postgres"
+        ConnectionStrings__SqlServerConnection: "Server=localhost;Database=CreditTransfer_Test;User Id=sa;Password=Test123!@#;TrustServerCertificate=true"
+      run: |
+        dotnet test CreditTransfer.Modern.sln \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --no-build \
+          --verbosity minimal \
+          --logger "trx;LogFileName=integration-tests.trx" \
+          --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true" \
+          --results-directory ./test-results \
+          --filter "Category=Integration" \
+          --collect:"XPlat Code Coverage" \
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+    - name: "📋 Publish Integration Test Results"
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: "Integration Test Results"
+        path: "test-results/*.trx"
+        reporter: dotnet-trx
+
+  # Job 4: Security & Quality Analysis
+  code-analysis:
+    name: "Code Analysis"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    steps:
+    - name: "📥 Checkout Code"
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: "🔧 Setup .NET"
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: "📦 Cache NuGet Packages"
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: "🔍 Initialize CodeQL"
+      uses: github/codeql-action/init@v3
+      with:
+        languages: csharp
+        queries: security-and-quality
+
+    - name: "🔄 Restore Dependencies"
+      run: dotnet restore CreditTransfer.Modern.sln --verbosity minimal
+
+    - name: "🏗️ Build for Analysis"
+      run: |
+        dotnet build CreditTransfer.Modern.sln \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --no-restore \
+          --verbosity minimal
+
+    - name: "🔍 Perform CodeQL Analysis"
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:csharp"
+
+  # Job 5: Build Summary
+  build-summary:
+    name: "Build Summary"
+    runs-on: ubuntu-latest
+    needs: [build, unit-tests, integration-tests, code-analysis]
+    if: always()
+    
+    steps:
+    - name: "📊 Generate Build Summary"
+      run: |
+        echo "# 🚀 CreditTransfer.Modern CI Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📋 Build Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Number**: ${{ needs.build.outputs.build-number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build**: ${{ needs.build.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Unit Tests**: ${{ needs.unit-tests.result == 'success' && '✅ Passed' || (needs.unit-tests.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Integration Tests**: ${{ needs.integration-tests.result == 'success' && '✅ Passed' || (needs.integration-tests.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Code Analysis**: ${{ needs.code-analysis.result == 'success' && '✅ Passed' || (needs.code-analysis.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Overall status
+        if [ "${{ needs.build.result }}" == "success" ] && \
+           [ "${{ needs.unit-tests.result }}" == "success" ] && \
+           [ "${{ needs.integration-tests.result }}" == "success" ] && \
+           [ "${{ needs.code-analysis.result }}" == "success" ]; then
+          echo "## 🎉 Overall Status: ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## ⚠️ Overall Status: ❌ FAILED" >> $GITHUB_STEP_SUMMARY
+        fi

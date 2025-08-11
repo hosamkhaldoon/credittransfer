@@ -36,7 +36,7 @@ namespace CreditTransfer.Core.Application.Services
         private readonly Meter _meter;
 
         // Configuration constants (migrated from original static fields)
-        private List<int> _msisdnLength;
+        private List<int> _msisdnLength = new List<int>();
         private int? _refillPinLength;
         private bool? _enableExtendedDays;
         private string? _defaultPin;
@@ -132,7 +132,10 @@ namespace CreditTransfer.Core.Application.Services
             {
                 if (_configurationLoaded) return;
 
-                _msisdnLength = await _configRepository.GetConfigValueAsync<List<int>>("CreditTransfer_MsisdnLength", new List<int> { 11 });
+                // Ensure _msisdnLength is initialized properly
+                _msisdnLength = await _configRepository.GetConfigValueAsync<List<int>>("CreditTransfer_MsisdnLength", new List<int> { 11 })
+                                ?? new List<int> { 11 };
+
                 _refillPinLength = await _configRepository.GetConfigValueAsync<int>("CreditTransfer_RefillPinLength", 4);
                 _enableExtendedDays = await _configRepository.GetConfigValueAsync<bool>("CreditTransfer_EnableExtendedDays", false);
                 _defaultPin = await _configRepository.GetConfigValueAsync<string>("CreditTransfer_DefaultPIN", "0000");
@@ -146,6 +149,7 @@ namespace CreditTransfer.Core.Application.Services
                 _configurationLock.Release();
             }
         }
+
 
         /// <summary>
         /// Transfers credit between two mobile numbers with PIN validation
@@ -459,7 +463,11 @@ namespace CreditTransfer.Core.Application.Services
 
                 var denominations = virginEventIds
                     .Split(',')
-                    .Select(id => decimal.TryParse(id.Trim(), out var value) ? value : 0m)
+                    .Select(id => 
+                    {
+                        var parts = id.Trim().Split('|');
+                        return parts.Length > 0 && decimal.TryParse(parts[0].Trim(), out var value) ? value : 0m;
+                    })
                     .Where(value => value > 0)
                     .OrderBy(value => value)
                     .ToList();
@@ -547,6 +555,7 @@ namespace CreditTransfer.Core.Application.Services
                 var (isValid, validationCode, validationMessage, sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig) = await ValidateTransferInputsInternalAsync(
                     sourceMsisdn, destinationMsisdn, amountRiyal);
 
+
                 activity?.SetTag("validation.result", isValid ? "success" : "failure");
                 activity?.SetTag("validation.code", validationCode);
 
@@ -583,47 +592,73 @@ namespace CreditTransfer.Core.Application.Services
             SubscriptionType? sourceMsisdnType = null;
             SubscriptionType? destinationMsisdnType = null;
             TransferConfig? sourceSubscriptionTypeConfig = null;
+            // Get nobill subscription types (original logic)
+            string sourceNobillSubscriptionType =string.Empty;
+            string destinationNobillSubscriptionType = string.Empty;
+
 
             try
             {
-                // Parameter validations (exact copy from original)
-                if (!long.TryParse(sourceMsisdn, out _) || string.IsNullOrEmpty(sourceMsisdn) || !_msisdnLength.Contains(sourceMsisdn.Length))
-                {
-                    return (false, ErrorCodes.InvalidSourcePhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidSourcePhone), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
-                }
 
-                if (!long.TryParse(destinationMsisdn, out _) || string.IsNullOrEmpty(destinationMsisdn) || !_msisdnLength.Contains(destinationMsisdn.Length))
-                {
-                    return (false, ErrorCodes.InvalidDestinationPhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
-                }
-
-                // Check if source and destination numbers are the same
-                if (sourceMsisdn == destinationMsisdn)
-                {
-                    return (false, ErrorCodes.SourceDestinationSame, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.SourceDestinationSame), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
-                }
-
-                // Get nobill subscription types (original logic)
-                string sourceNobillSubscriptionType;
-                string destinationNobillSubscriptionType;
-
+                // Explicitly declare as nullable Task<string>
+                Task<string>? sourceTask = null;
+                Task<string>? destinationTask = null;
                 try
                 {
-                    sourceNobillSubscriptionType = await _subscriptionRepository.GetNobillSubscriptionTypeAsync(sourceMsisdn);
-                }
-                catch (Exception)
-                {
-                    return (false, ErrorCodes.InvalidSourcePhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidSourcePhone), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
-                }
+                    sourceTask = _subscriptionRepository.GetNobillSubscriptionTypeAsync(sourceMsisdn);
+                    destinationTask = _subscriptionRepository.GetNobillSubscriptionTypeAsync(destinationMsisdn);
 
-                try
-                {
-                    destinationNobillSubscriptionType = await _subscriptionRepository.GetNobillSubscriptionTypeAsync(destinationMsisdn);
+                    // Parameter validations (exact copy from original)
+                    if (!long.TryParse(sourceMsisdn, out _) || string.IsNullOrEmpty(sourceMsisdn) || !_msisdnLength.Contains(sourceMsisdn.Length))
+                    {
+                        return (false, ErrorCodes.InvalidSourcePhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidSourcePhone), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    }
+
+                    if (!long.TryParse(destinationMsisdn, out _) || string.IsNullOrEmpty(destinationMsisdn) || !_msisdnLength.Contains(destinationMsisdn.Length))
+                    {
+                        return (false, ErrorCodes.InvalidDestinationPhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    }
+
+                    // Check if source and destination numbers are the same
+                    if (sourceMsisdn == destinationMsisdn)
+                    {
+                        return (false, ErrorCodes.SourceDestinationSame, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.SourceDestinationSame), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    }
+
+                    await Task.WhenAll(sourceTask, destinationTask);
+
+                    sourceNobillSubscriptionType = sourceTask.Result;
+                    destinationNobillSubscriptionType = destinationTask.Result;
                 }
-                catch (Exception)
+                catch (Exception) // Remove unused ex variable 
                 {
-                    return (false, ErrorCodes.InvalidDestinationPhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    // Handle individual exceptions
+                    if (sourceTask!.IsFaulted)
+                    {
+                        return (false, ErrorCodes.InvalidSourcePhone,
+                            await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidSourcePhone),
+                            sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    }
+
+                    if (destinationTask!.IsFaulted)
+                    {
+                        return (false, ErrorCodes.InvalidDestinationPhone,
+                            await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone),
+                            sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    }
+
+                    // Fallback: unexpected failure (both failed or unknown error)
+                    return (false, ErrorCodes.MiscellaneousError,
+                        await _errorConfigService.GetErrorMessageAsync(ErrorCodes.MiscellaneousError),
+                        sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
                 }
+                // Start the async operation in the background it could take ~ 1 second for each to complete and can be awaited later
+                Task<(int responseCode, string? itemValue)> accountValueTask =
+                    _nobillCallsService.GetAccountValueAsync(sourceMsisdn, AccountItem.balance);
+                Task<SubscriptionBlockStatus> blockStatusTask = _subscriptionRepository.GetSubscriptionBlockStatusAsync(sourceMsisdn);
+                Task<SubscriptionStatus> destinationStatusTask = _subscriptionRepository.GetSubscriptionStatusAsync(destinationMsisdn);
+                
+
 
                 try
                 {
@@ -639,6 +674,10 @@ namespace CreditTransfer.Core.Application.Services
                 {
                     return (false, ErrorCodes.SourcePhoneNotFound, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.SourcePhoneNotFound), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
                 }
+
+                // Start the async operation in the background it could take ~ 1 second for each to complete and can be awaited later
+                Task<decimal> maxTransferAmountTask = GetAccountMaxTransferAmountByServiceNameAsync(
+                    sourceMsisdn, sourceSubscriptionTypeConfig!.CreditTransferCustomerService ?? "");
 
                 try
                 {
@@ -678,7 +717,7 @@ namespace CreditTransfer.Core.Application.Services
 
                 // Get source balance for percentage validation (original logic)
 
-                (int responseCode, string? itemValue) = await _nobillCallsService.GetAccountValueAsync(sourceMsisdn, AccountItem.balance);
+                (int responseCode, string? itemValue) =await accountValueTask;
                 decimal sourceMsisdnBalance = 0;
                 if (!string.IsNullOrEmpty(itemValue) && !decimal.TryParse(itemValue, out sourceMsisdnBalance))
                 {
@@ -688,30 +727,44 @@ namespace CreditTransfer.Core.Application.Services
                 // MaximumPercentageAmount validation (exact original logic from ValidateTransferInputs)
                 if (_maximumPercentageAmount!.Value != 1)
                 {
-                    if (sourceMsisdnBalance - amount < (sourceMsisdnBalance / _maximumPercentageAmount.Value))
+                    if (sourceMsisdnBalance - amount < (sourceMsisdnBalance * _maximumPercentageAmount.Value))
                     {
                         return (false, ErrorCodes.RemainingBalanceHalf, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.RemainingBalanceHalf), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
                     }
                 }
 
-                // Check subscription block status (original logic)
-                if (await _subscriptionRepository.GetSubscriptionBlockStatusAsync(sourceMsisdn) != SubscriptionBlockStatus.NO_BLOCK)
+ 
+                decimal maxTransferAmount;
+                try
                 {
-                    return (false, ErrorCodes.MiscellaneousError, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.MiscellaneousError), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    await Task.WhenAll(blockStatusTask, destinationStatusTask, maxTransferAmountTask);
+
+                    if (blockStatusTask.Result != SubscriptionBlockStatus.NO_BLOCK)
+                    {
+                        return (false, ErrorCodes.MiscellaneousError,
+                            await _errorConfigService.GetErrorMessageAsync(ErrorCodes.MiscellaneousError),
+                            sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    }
+
+                    if (destinationStatusTask.Result == SubscriptionStatus.ACTIVE_BEFORE_FIRST_USE)
+                    {
+                        return (false, ErrorCodes.InvalidDestinationPhone,
+                            await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone),
+                            sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
+                    }
+
+                    maxTransferAmount = maxTransferAmountTask.Result;
+
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error occurred while validating subscription states and max transfer amount.");
+                    return (false, ErrorCodes.MiscellaneousError,
+                        await _errorConfigService.GetErrorMessageAsync(ErrorCodes.MiscellaneousError),
+                        sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
                 }
 
-                // Check destination subscription status (original logic)
-                if (await _subscriptionRepository.GetSubscriptionStatusAsync(destinationMsisdn) == SubscriptionStatus.ACTIVE_BEFORE_FIRST_USE)
-                {
-                    return (false, ErrorCodes.InvalidDestinationPhone, await _errorConfigService.GetErrorMessageAsync(ErrorCodes.InvalidDestinationPhone), sourceMsisdnType, destinationMsisdnType, sourceSubscriptionTypeConfig);
-                }
 
-
-
-
-                // Get maximum transfer amount by service name (original logic)
-                decimal maxTransferAmount = await GetAccountMaxTransferAmountByServiceNameAsync(
-                    sourceMsisdn, sourceSubscriptionTypeConfig!.CreditTransferCustomerService ?? "");
 
                 if (amount > maxTransferAmount)
                 {
@@ -1317,6 +1370,7 @@ namespace CreditTransfer.Core.Application.Services
 
         /// <summary>
         /// Performs comprehensive system health check including all dependencies
+        /// Short-circuits when critical dependencies (Database, Redis, NoBill) are unhealthy
         /// Replicates functionality from health-check.ps1 script
         /// </summary>
         public async Task<ComprehensiveHealthResponse> GetSystemHealthAsync()
@@ -1335,19 +1389,42 @@ namespace CreditTransfer.Core.Application.Services
 
             try
             {
-                // 1. Database Connectivity Check
+                // 1. Database Connectivity Check (Critical)
                 await CheckDatabaseConnectivityAsync(response);
+                var dbComponent = response.Components.LastOrDefault(c => c.Component == "SQL_Server_Database");
+                if (dbComponent?.Status == "UNHEALTHY")
+                {
+                    _logger.LogError("Database connectivity failed - short-circuiting health check");
+                    activity?.SetTag("short_circuit_reason", "database_unhealthy");
+                    return FinalizeHealthResponse(response, startTime, activity, "Database connectivity failed - service cannot operate");
+                }
 
-                // 2. Redis Connectivity Check  
+                // 2. Redis Connectivity Check (Critical for performance)
                 await CheckRedisConnectivityAsync(response);
+                var redisComponent = response.Components.LastOrDefault(c => c.Component == "Redis_Cache");
+                if (redisComponent?.Status == "UNHEALTHY")
+                {
+                    _logger.LogError("Redis connectivity failed - short-circuiting health check");
+                    activity?.SetTag("short_circuit_reason", "redis_unhealthy");
+                    return FinalizeHealthResponse(response, startTime, activity, "Redis cache unavailable - severe performance degradation expected");
+                }
 
-                // 3. NoBill Service Connectivity Check
+                // 3. NoBill Service Connectivity Check (Critical for transfers)
                 await CheckNobillServiceConnectivityAsync(response);
+                var nobillComponent = response.Components.LastOrDefault(c => c.Component == "NoBill_Service");
+                if (nobillComponent?.Status == "UNHEALTHY")
+                {
+                    _logger.LogError("NoBill service connectivity failed - short-circuiting health check");
+                    activity?.SetTag("short_circuit_reason", "nobill_unhealthy");
+                    return FinalizeHealthResponse(response, startTime, activity, "NoBill service unavailable - credit transfers will fail");
+                }
 
-                // 4. Configuration Validation Check
+                _logger.LogInformation("All critical dependencies healthy - proceeding with extended health checks");
+
+                // 4. Configuration Validation Check (Non-critical)
                 await CheckConfigurationValidityAsync(response);
 
-                // 5. External Dependencies Check
+                // 5. External Dependencies Check (Non-critical)
                 await CheckExternalDependenciesAsync(response);
 
                 // Calculate summary statistics
@@ -1381,6 +1458,33 @@ namespace CreditTransfer.Core.Application.Services
 
                 return response;
             }
+        }
+
+        /// <summary>
+        /// Finalizes health response when short-circuiting due to critical dependency failure
+        /// </summary>
+        private ComprehensiveHealthResponse FinalizeHealthResponse(
+            ComprehensiveHealthResponse response, 
+            DateTime startTime, 
+            Activity? activity, 
+            string shortCircuitReason)
+        {
+            // Calculate summary with current components
+            CalculateHealthSummary(response);
+            
+            // Force overall status to UNHEALTHY due to critical dependency failure
+            response.OverallStatus = "UNHEALTHY";
+            response.ErrorDetails = shortCircuitReason;
+            
+            var duration = (DateTime.UtcNow - startTime).TotalMilliseconds;
+            activity?.SetTag("health.check.duration.ms", duration);
+            activity?.SetTag("health.overall.status", response.OverallStatus);
+            activity?.SetTag("health.check.short_circuited", true);
+            
+            _logger.LogWarning("Health check short-circuited after {Duration}ms: {Reason}", 
+                duration, shortCircuitReason);
+            
+            return response;
         }
 
         private async Task CheckDatabaseConnectivityAsync(ComprehensiveHealthResponse response)
@@ -1560,9 +1664,9 @@ namespace CreditTransfer.Core.Application.Services
                 
                 // Test critical configuration values
                 configTests.Add(("MsisdnLength", _msisdnLength, _msisdnLength?.Count > 0));
-                configTests.Add(("RefillPinLength", _refillPinLength, _refillPinLength.HasValue && _refillPinLength > 0));
-                configTests.Add(("DefaultPin", _defaultPin, !string.IsNullOrEmpty(_defaultPin)));
-                configTests.Add(("MaximumPercentageAmount", _maximumPercentageAmount, _maximumPercentageAmount.HasValue && _maximumPercentageAmount > 0));
+                configTests.Add(("RefillPinLength", _refillPinLength ?? 0, _refillPinLength.HasValue && _refillPinLength > 0));
+                configTests.Add(("DefaultPin", _defaultPin ?? string.Empty, !string.IsNullOrEmpty(_defaultPin)));
+                configTests.Add(("MaximumPercentageAmount", _maximumPercentageAmount ?? 0, _maximumPercentageAmount.HasValue && _maximumPercentageAmount > 0));
 
                 var invalidConfigs = configTests.Where(c => !c.isValid).ToList();
                 var responseTime = (DateTime.UtcNow - startTime).TotalMilliseconds;

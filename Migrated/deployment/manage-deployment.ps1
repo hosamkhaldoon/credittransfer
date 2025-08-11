@@ -1,5 +1,6 @@
 ﻿# Credit Transfer System - Kubernetes Deployment Management Script
 # Enhanced with Istio Service Mesh and Comprehensive Observability (Kiali, OpenTelemetry, Jaeger)
+# Updated to use Minikube instead of Docker Desktop
 
 param(
     [string]$Action = "status",
@@ -44,16 +45,147 @@ function Write-Progress {
     Write-Host "[PROGRESS] $Message" -ForegroundColor $Colors.Magenta
 }
 
-function Test-DockerDesktopRunning {
+function Test-MinikubeInstalled {
     try {
-        $dockerInfo = docker info 2>$null
-        if ($dockerInfo) {
+        $minikubeVersion = minikube version 2>$null
+        if ($minikubeVersion) {
+            Write-Status "Minikube is installed: $($minikubeVersion.Split("`n")[0])"
             return $true
         }
     } catch {
         return $false
     }
     return $false
+}
+
+function Install-Minikube {
+    Write-Status "Installing Minikube..."
+    
+    # Check if running on Windows
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        Write-Status "Detected Windows environment"
+        
+        # Check if Chocolatey is available
+        $choco = Get-Command choco -ErrorAction SilentlyContinue
+        if ($choco) {
+            Write-Status "Installing Minikube using Chocolatey..."
+            choco install minikube -y
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "✅ Minikube installed successfully via Chocolatey"
+                return $true
+            }
+        }
+        
+        # Fallback to manual download
+        Write-Status "Installing Minikube manually..."
+        $minikubeUrl = "https://storage.googleapis.com/minikube/releases/latest/minikube-windows-amd64.exe"
+        $minikubePath = "$env:USERPROFILE\minikube.exe"
+        
+        try {
+            Write-Progress "Downloading Minikube from $minikubeUrl..."
+            Invoke-WebRequest -Uri $minikubeUrl -OutFile $minikubePath -UseBasicParsing
+            
+            # Add to PATH if not already there
+            $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+            if ($userPath -notlike "*$env:USERPROFILE*") {
+                [Environment]::SetEnvironmentVariable("PATH", "$userPath;$env:USERPROFILE", "User")
+                $env:PATH = "$env:PATH;$env:USERPROFILE"
+            }
+            
+            Write-Success "✅ Minikube installed successfully to $minikubePath"
+            return $true
+        } catch {
+            Write-Error "Failed to download Minikube: $($_.Exception.Message)"
+            return $false
+        }
+    } else {
+        Write-Error "Non-Windows installation not implemented. Please install Minikube manually."
+        Write-Host "Visit: https://minikube.sigs.k8s.io/docs/start/" -ForegroundColor $Colors.Blue
+        return $false
+    }
+}
+
+function Test-MinikubeRunning {
+    try {
+        $status = minikube status 2>$null
+        if ($status -and $status -match "Running") {
+            return $true
+        }
+    } catch {
+        return $false
+    }
+    return $false
+}
+
+function Start-Minikube {
+    Write-Status "Starting Minikube..."
+    
+    # Check if there's an existing cluster
+    $existingCluster = minikube status 2>$null
+    if ($existingCluster -and $existingCluster -match "does not exist") {
+        Write-Status "No existing Minikube cluster found"
+    } elseif ($existingCluster) {
+        Write-Status "Found existing Minikube cluster"
+        
+        # Check if it's running
+        if ($existingCluster -match "Running") {
+            Write-Success "✅ Minikube cluster is already running"
+            return $true
+        } else {
+            Write-Status "Existing cluster found but not running. Starting existing cluster..."
+            minikube start
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "✅ Existing Minikube cluster started successfully"
+                
+                # Enable required addons
+                Write-Status "Ensuring required Minikube addons are enabled..."
+                minikube addons enable ingress 2>$null
+                minikube addons enable dashboard 2>$null
+                minikube addons enable metrics-server 2>$null
+                
+                return $true
+            } else {
+                Write-Warning "Failed to start existing cluster. Will delete and recreate..."
+                minikube delete
+                Start-Sleep -Seconds 5
+            }
+        }
+    }
+    
+    # Configure Minikube with appropriate resources for new cluster
+    Write-Progress "Configuring Minikube with sufficient resources..."
+    
+    # Use docker driver which is more reliable on Windows
+    Write-Status "Using Docker driver for better Windows compatibility..."
+    minikube config set cpus 4
+    minikube config set memory 8192
+    minikube config set disk-size 20GB
+    minikube config set driver docker
+    
+    # Start Minikube with docker driver
+    Write-Progress "Starting new Minikube cluster (this may take a few minutes)..."
+    minikube start --cpus=4 --memory=8192 --disk-size=20GB --driver=docker
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "✅ Minikube started successfully"
+        
+        # Enable required addons
+        Write-Status "Enabling required Minikube addons..."
+        minikube addons enable ingress
+        minikube addons enable dashboard
+        minikube addons enable metrics-server
+        
+        return $true
+    } else {
+        Write-Error "Failed to start Minikube"
+        Write-Host ""
+        Write-Host "🔧 Troubleshooting Tips:" -ForegroundColor $Colors.Yellow
+        Write-Host "1. Make sure Docker Desktop is running" -ForegroundColor $Colors.White
+        Write-Host "2. Try: minikube delete" -ForegroundColor $Colors.White
+        Write-Host "3. Then retry the deployment" -ForegroundColor $Colors.White
+        Write-Host "4. Check available drivers: minikube start --help" -ForegroundColor $Colors.White
+        return $false
+    }
 }
 
 function Test-KubernetesRunning {
@@ -134,6 +266,137 @@ function Test-IstioInstalled {
     } catch {
         return $false
     }
+}
+
+function Switch-ToMinikube {
+    Write-Status "Switching kubectl context to minikube..."
+    
+    try {
+        kubectl config use-context minikube 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Successfully switched to minikube context"
+            return $true
+        }
+    } catch {
+        Write-Error "Failed to switch to minikube context"
+        return $false
+    }
+    return $false
+}
+
+function Test-MinikubeKubernetesEnabled {
+    try {
+        # Check if minikube context exists
+        $contexts = kubectl config get-contexts 2>$null
+        if ($contexts -match "minikube") {
+            Write-Status "Found minikube context"
+            
+            # Try to switch to minikube context and test
+            $currentContext = kubectl config current-context 2>$null
+            kubectl config use-context minikube 2>$null
+            
+            if ($LASTEXITCODE -eq 0) {
+                # Test if we can actually connect to Kubernetes
+                $namespaces = kubectl get namespaces 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Status "Minikube Kubernetes is fully functional"
+                    return $true
+                } else {
+                    Write-Warning "minikube context exists but Kubernetes is not responsive"
+                }
+            }
+            
+            # Restore original context if switch failed
+            if ($currentContext) {
+                kubectl config use-context $currentContext 2>$null
+            }
+        }
+    } catch {
+        return $false
+    }
+    return $false
+}
+
+function Wait-ForKubernetesReady {
+    Write-Status "Waiting for Kubernetes to be ready..."
+    
+    $timeout = 180 # 3 minutes
+    $elapsed = 0
+    
+    while (-not (Test-KubernetesRunning) -and $elapsed -lt $timeout) {
+        Start-Sleep -Seconds 10
+        $elapsed += 10
+        Write-Host "." -NoNewline -ForegroundColor $Colors.Yellow
+    }
+    Write-Host ""
+    
+    if (Test-KubernetesRunning) {
+        Write-Success "Kubernetes is ready!"
+        return $true
+    } else {
+        Write-Error "Kubernetes is not ready after $timeout seconds"
+        return $false
+    }
+}
+
+function Ensure-KubernetesRunning {
+    Write-Status "Checking Kubernetes status..."
+    
+    # Check if Kubernetes is already running
+    if (Test-KubernetesRunning) {
+        Write-Success "Kubernetes is already running"
+        $currentContext = kubectl config current-context 2>$null
+        if ($currentContext -ne "minikube") {
+            Write-Status "Switching to minikube context..."
+            kubectl config use-context minikube 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Switched to minikube context"
+            }
+        }
+        return $true
+    }
+    
+    Write-Warning "Kubernetes is not running. Setting up Minikube Kubernetes..."
+    
+    # Check if Minikube is installed
+    if (-not (Test-MinikubeInstalled)) {
+        Write-Status "Minikube is not installed"
+        if (-not (Install-Minikube)) {
+            return $false
+        }
+    } else {
+        Write-Success "Minikube is installed"
+    }
+    
+    # Check if Minikube is running
+    if (-not (Test-MinikubeRunning)) {
+        if (-not (Start-Minikube)) {
+            return $false
+        }
+    } else {
+        Write-Success "Minikube is running"
+    }
+    
+    # Switch to minikube context
+    if (-not (Switch-ToMinikube)) {
+        return $false
+    }
+    
+    # Wait for Kubernetes to be ready
+    if (-not (Wait-ForKubernetesReady)) {
+        Write-Warning "Kubernetes may still be starting up. Trying alternative check..."
+        # Give it one more chance with a longer timeout
+        Start-Sleep -Seconds 30
+        if (-not (Test-KubernetesRunning)) {
+            Write-Error "Kubernetes is not responding. Please check Minikube status."
+            Show-KubernetesStatus
+            return $false
+        }
+    }
+    
+    Write-Success "✅ Minikube Kubernetes is now ready!"
+    Show-KubernetesStatus
+    return $true
 }
 
 function Update-ImagePullPolicy {
@@ -220,13 +483,13 @@ function Force-ImagePull {
         kubectl rollout restart deployment credittransfer-web -n credittransfer
         
         Write-Progress "Waiting for rollouts to complete..."
-        kubectl rollout status deployment credittransfer-api -n credittransfer --timeout=300s
+        kubectl rollout status deployment credittransfer-api -n credittransfer --timeout=120s
         $apiStatus = $LASTEXITCODE
         
-        kubectl rollout status deployment credittransfer-wcf -n credittransfer --timeout=300s
+        kubectl rollout status deployment credittransfer-wcf -n credittransfer --timeout=120s
         $wcfStatus = $LASTEXITCODE
         
-        kubectl rollout status deployment credittransfer-web -n credittransfer --timeout=300s
+        kubectl rollout status deployment credittransfer-web -n credittransfer --timeout=120s
         $webStatus = $LASTEXITCODE
         
         if ($apiStatus -eq 0 -and $wcfStatus -eq 0 -and $webStatus -eq 0) {
@@ -257,7 +520,7 @@ function Force-ImagePull {
         kubectl rollout restart deployment $deploymentName -n credittransfer
         
         Write-Progress "Waiting for rollout to complete..."
-        kubectl rollout status deployment $deploymentName -n credittransfer --timeout=300s
+        kubectl rollout status deployment $deploymentName -n credittransfer --timeout=120s
         
         if ($LASTEXITCODE -eq 0) {
             Write-Success "✅ Successfully force-restarted $deploymentName (timestamp: $timestamp)"
@@ -275,334 +538,7 @@ function Force-ImagePull {
     
     return $true
 }
-function Install-Istio {
-    Write-Status "Setting up Istio..."
-    
-    # Check if istioctl already exists in PATH
-    $istioctl = Get-Command istioctl -ErrorAction SilentlyContinue
-    if ($istioctl) {
-        Write-Status "istioctl already exists in PATH"
-        return $true
-    }
-    
-    # Check if Istio directory already exists
-    $existingIstioDir = Get-ChildItem -Directory -Filter "istio-*" | Select-Object -First 1
-    if ($existingIstioDir) {
-        Write-Status "Istio directory already exists at $($existingIstioDir.FullName)"
-        # Add istioctl to PATH
-        $env:PATH = "$($existingIstioDir.FullName)\bin;$env:PATH"
-        return $true
-    }
-    
-    # Download and extract Istio if not found
-    $istioVersion = "1.26.2"
-    $downloadUrl = "https://github.com/istio/istio/releases/download/$istioVersion/istio-$istioVersion-win.zip"
-    $outputFile = "istio.zip"
-    
-    Write-Status "Downloading Istio $istioVersion..."
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $outputFile
-    
-    Write-Status "Extracting Istio..."
-    Expand-Archive -Path $outputFile -DestinationPath . -Force
-    Remove-Item $outputFile
-    
-    # Find Istio directory
-    $istioDir = Get-ChildItem -Directory -Filter "istio-*" | Select-Object -First 1
-    if (-not $istioDir) {
-        Write-Error "Istio directory not found!"
-        return $false
-    }
-    
-    # Add istioctl to PATH
-    $env:PATH = "$($istioDir.FullName)\bin;$env:PATH"
-    
-    # Install Istio with demo profile
-    Write-Status "Installing Istio with demo profile..."
-    & "$($istioDir.FullName)\bin\istioctl.exe" install --set profile=demo -y
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to install Istio"
-        return $false
-    }
-    
-    # Create istio-system namespace if it doesn't exist
-    kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
-    
-    # Install Prometheus with proper configuration
-    Write-Status "Installing Prometheus..."
-    $prometheusYaml = @"
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: prometheus
-  namespace: istio-system
-  labels:
-    app: prometheus
-    release: istio
-data:
-  prometheus.yml: |
-    global:
-      scrape_interval: 15s
-      evaluation_interval: 15s
-    scrape_configs:
-    - job_name: 'istio-mesh'
-      kubernetes_sd_configs:
-      - role: endpoints
-        namespaces:
-          names:
-          - istio-system
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
-        action: keep
-        regex: istio-telemetry;prometheus
-    - job_name: 'kubernetes-pods'
-      kubernetes_sd_configs:
-      - role: pod
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
-        action: keep
-        regex: true
-      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
-        action: replace
-        target_label: __metrics_path__
-        regex: (.+)
-      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
-        action: replace
-        regex: ([^:]+)(?::\d+)?;(\d+)
-        replacement: ${1}:${2}
-        target_label: __address__
-      - source_labels: [__meta_kubernetes_namespace]
-        action: replace
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: kubernetes_pod_name
-    - job_name: 'istio-policy'
-      kubernetes_sd_configs:
-      - role: endpoints
-        namespaces:
-          names:
-          - istio-system
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
-        action: keep
-        regex: istio-policy;http-policy-monitoring
-    - job_name: 'istio-telemetry'
-      kubernetes_sd_configs:
-      - role: endpoints
-        namespaces:
-          names:
-          - istio-system
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
-        action: keep
-        regex: istio-telemetry;http-monitoring
-    - job_name: 'pilot'
-      kubernetes_sd_configs:
-      - role: endpoints
-        namespaces:
-          names:
-          - istio-system
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
-        action: keep
-        regex: istiod;http-monitoring
-"@
-    $prometheusYaml | kubectl apply -f -
 
-    # Create Prometheus deployment and service
-    Write-Status "Creating Prometheus deployment and service..."
-    $prometheusDeploymentYaml = @"
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: prometheus
-  namespace: istio-system
-  labels:
-    app: prometheus
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: prometheus
-  template:
-    metadata:
-      labels:
-        app: prometheus
-    spec:
-      containers:
-      - name: prometheus
-        image: prom/prometheus:v2.45.0
-        args:
-          - '--storage.tsdb.retention=6h'
-          - '--config.file=/etc/prometheus/prometheus.yml'
-          - '--web.enable-lifecycle'
-        ports:
-        - name: http
-          containerPort: 9090
-        readinessProbe:
-          httpGet:
-            path: /-/ready
-            port: 9090
-          initialDelaySeconds: 10
-          periodSeconds: 5
-        livenessProbe:
-          httpGet:
-            path: /-/healthy
-            port: 9090
-          initialDelaySeconds: 10
-          periodSeconds: 5
-        volumeMounts:
-        - name: config-volume
-          mountPath: /etc/prometheus
-      volumes:
-      - name: config-volume
-        configMap:
-          name: prometheus
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: prometheus
-  namespace: istio-system
-  labels:
-    app: prometheus
-spec:
-  type: NodePort
-  ports:
-  - name: http
-    port: 9090
-    targetPort: 9090
-    nodePort: 30090
-  selector:
-    app: prometheus
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: prometheus
-  namespace: istio-system
-  labels:
-    app: prometheus
-    release: istio
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: prometheus
-  labels:
-    app: prometheus
-    release: istio
-rules:
-- apiGroups: [""]
-  resources:
-  - nodes
-  - services
-  - endpoints
-  - pods
-  verbs: ["get", "list", "watch"]
-- apiGroups: [""]
-  resources:
-  - configmaps
-  verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: prometheus
-  labels:
-    app: prometheus
-    release: istio
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: prometheus
-subjects:
-- kind: ServiceAccount
-  name: prometheus
-  namespace: istio-system
-"@
-    $prometheusDeploymentYaml | kubectl apply -f -
-
-    # Wait for Prometheus to be ready with simplified checks
-    Write-Status "Waiting for Prometheus to be ready..."
-    $retryCount = 0
-    $maxRetries = 12
-    do {
-        $ready = $false
-        $podStatus = kubectl get pods -n istio-system -l app=prometheus -o jsonpath='{.items[0].status.phase}' 2>&1
-        $readyStatus = kubectl get pods -n istio-system -l app=prometheus -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>&1
-        
-        if ($podStatus -eq "Running" -and $readyStatus -eq "True") {
-            # Try to access Prometheus directly via NodePort
-            try {
-                $minikubeIP = kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>&1
-                $response = Invoke-WebRequest -Uri "http://${minikubeIP}:30090/-/ready" -TimeoutSec 5 -ErrorAction SilentlyContinue
-                if ($response.StatusCode -eq 200) {
-                    $ready = $true
-                    Write-Success "Prometheus is ready and responding at http://${minikubeIP}:30090"
-                }
-            }
-            catch {
-                Write-Warning "Prometheus API not yet accessible..."
-            }
-        }
-        
-        if (-not $ready) {
-            $retryCount++
-            if ($retryCount -lt $maxRetries) {
-                Write-Status "Waiting for Prometheus to be ready (Attempt $retryCount of $maxRetries)..."
-                Start-Sleep -Seconds 10
-            }
-        }
-    } while (-not $ready -and $retryCount -lt $maxRetries)
-
-    if (-not $ready) {
-        Write-Warning "Prometheus is not ready after $maxRetries attempts. Check the logs with: kubectl logs -n istio-system -l app=prometheus"
-        Write-Warning "You can still try accessing Prometheus at http://<minikube-ip>:30090"
-    }
-    
-    # Install other Istio addons
-    Write-Status "Installing other Istio addons..."
-    kubectl apply -f "$($istioDir.FullName)\samples\addons\grafana.yaml"
-    kubectl apply -f "$($istioDir.FullName)\samples\addons\jaeger.yaml"
-    kubectl apply -f "$($istioDir.FullName)\samples\addons\kiali.yaml"
-    
-    # Verify monitoring stack
-    Write-Status "Verifying monitoring stack..."
-    $monitoringServices = @(
-        @{ Name = "Prometheus"; Label = "app=prometheus" },
-        @{ Name = "Grafana"; Label = "app=grafana" },
-        @{ Name = "Jaeger"; Label = "app=jaeger" },
-        @{ Name = "Kiali"; Label = "app=kiali" }
-    )
-    
-    foreach ($service in $monitoringServices) {
-        $retryCount = 0
-        $maxRetries = 5
-        $ready = $false
-        
-        do {
-            $status = kubectl get pods -n istio-system -l $service.Label -o jsonpath='{.items[0].status.phase}' 2>&1
-            if ($status -eq "Running") {
-                $ready = $true
-                Write-Success "$($service.Name) is ready"
-            } else {
-                $retryCount++
-                if ($retryCount -lt $maxRetries) {
-                    Write-Status "Waiting for $($service.Name) to be ready (Attempt $retryCount of $maxRetries)..."
-                    Start-Sleep -Seconds 5
-                }
-            }
-        } while (-not $ready -and $retryCount -lt $maxRetries)
-        
-        if (-not $ready) {
-            Write-Warning "$($service.Name) is not ready after $maxRetries attempts"
-        }
-    }
-    
-    Write-Success "Istio setup completed successfully!"
-    return $true
-}
 function Install-Istio {
     Write-Status "Installing Istio service mesh..."
     
@@ -617,8 +553,8 @@ function Install-Istio {
     
     Write-Status "Using local istioctl: $localIstioctl"
     
-    # Install Istio with reduced resource requirements for Docker Desktop
-    Write-Progress "Installing Istio control plane with Docker Desktop optimizations..."
+    # Install Istio with reduced resource requirements for Minikube
+    Write-Progress "Installing Istio control plane with Minikube optimizations..."
     & $localIstioctl install --set values.pilot.resources.requests.memory=512Mi --set values.global.proxy.resources.requests.memory=128Mi --set values.global.proxy.resources.requests.cpu=100m --set values.pilot.traceSampling=100.0 -y
     
     if ($LASTEXITCODE -ne 0) {
@@ -700,8 +636,24 @@ function Install-IstioAddons {
     Write-Progress "Waiting for Kiali to be ready..."
     $timeout = 300
     $elapsed = 0
+    $checkInterval = 10
     
-    
+    while ($elapsed -lt $timeout) {
+        $kialiPods = kubectl get pods -n istio-system -l app=kiali --no-headers 2>$null
+        if ($kialiPods -and $kialiPods -match "Running") {
+            Write-Success "✅ Kiali is ready"
+            break
+        }
+        
+        Start-Sleep -Seconds $checkInterval
+        $elapsed += $checkInterval
+        Write-Host "." -NoNewline -ForegroundColor $Colors.Yellow
+        
+        if ($elapsed % 60 -eq 0) {
+            Write-Host ""
+            Write-Status "[$elapsed/$timeout seconds] Still waiting for Kiali..."
+        }
+    }
     Write-Host ""
     
     if ($elapsed -ge $timeout) {
@@ -771,7 +723,9 @@ function Enable-IstioSidecarInjection {
     kubectl rollout restart deployment credittransfer-wcf -n credittransfer
     
     # Wait for rollouts to complete
-   
+    Write-Progress "Waiting for deployments to restart with sidecars..."
+    kubectl rollout status deployment credittransfer-api -n credittransfer --timeout=120s
+    kubectl rollout status deployment credittransfer-wcf -n credittransfer --timeout=120s
     
     if ($LASTEXITCODE -eq 0) {
         Write-Success "✅ Deployments restarted with Istio sidecars!"
@@ -1043,39 +997,39 @@ function Ensure-KubernetesRunning {
     if (Test-KubernetesRunning) {
         Write-Success "Kubernetes is already running"
         $currentContext = kubectl config current-context 2>$null
-        if ($currentContext -ne "docker-desktop") {
-            Write-Status "Switching to docker-desktop context..."
-            kubectl config use-context docker-desktop 2>$null
+        if ($currentContext -ne "minikube") {
+            Write-Status "Switching to minikube context..."
+            kubectl config use-context minikube 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "Switched to docker-desktop context"
+                Write-Success "Switched to minikube context"
             }
         }
         return $true
     }
     
-    Write-Warning "Kubernetes is not running. Setting up Docker Desktop Kubernetes..."
+    Write-Warning "Kubernetes is not running. Setting up Minikube Kubernetes..."
     
-    # Check if Docker Desktop is running
-    if (-not (Test-DockerDesktopRunning)) {
-        Write-Status "Docker Desktop is not running"
-        if (-not (Start-DockerDesktop)) {
+    # Check if Minikube is installed
+    if (-not (Test-MinikubeInstalled)) {
+        Write-Status "Minikube is not installed"
+        if (-not (Install-Minikube)) {
             return $false
         }
     } else {
-        Write-Success "Docker Desktop is running"
+        Write-Success "Minikube is installed"
     }
     
-    # Check if Docker Desktop Kubernetes is enabled
-    if (-not (Test-DockerDesktopKubernetesEnabled)) {
-        if (-not (Enable-DockerDesktopKubernetes)) {
+    # Check if Minikube is running
+    if (-not (Test-MinikubeRunning)) {
+        if (-not (Start-Minikube)) {
             return $false
         }
     } else {
-        Write-Success "Docker Desktop Kubernetes is enabled"
+        Write-Success "Minikube is running"
     }
     
-    # Switch to docker-desktop context
-    if (-not (Switch-ToDockerDesktop)) {
+    # Switch to minikube context
+    if (-not (Switch-ToMinikube)) {
         return $false
     }
     
@@ -1085,13 +1039,13 @@ function Ensure-KubernetesRunning {
         # Give it one more chance with a longer timeout
         Start-Sleep -Seconds 30
         if (-not (Test-KubernetesRunning)) {
-            Write-Error "Kubernetes is not responding. Please check Docker Desktop status."
+            Write-Error "Kubernetes is not responding. Please check Minikube status."
             Show-KubernetesStatus
             return $false
         }
     }
     
-    Write-Success "✅ Docker Desktop Kubernetes is now ready!"
+    Write-Success "✅ Minikube Kubernetes is now ready!"
     Show-KubernetesStatus
     return $true
 }
@@ -1100,7 +1054,7 @@ function Show-Help {
     Write-Host ""
     Write-Host "🚀 Credit Transfer System - Deployment Management" -ForegroundColor $Colors.Green
     Write-Host "Enhanced with Istio Service Mesh & Comprehensive Observability" -ForegroundColor $Colors.Green
-    Write-Host "=============================================================" -ForegroundColor $Colors.Green
+    Write-Host "============================================================================" -ForegroundColor $Colors.Green
     Write-Host ""
     Write-Host "Usage: .\manage-deployment.ps1 -Action <action> [-Service <service>] [-SkipKubernetesCheck] [-ConvertToPublic] [-SkipIstio] [-ForcePullImages]" -ForegroundColor $Colors.White
     Write-Host ""
@@ -1116,7 +1070,7 @@ function Show-Help {
     Write-Host "  istio-tools    - Start port forwarding for Istio monitoring tools only" -ForegroundColor $Colors.White
     Write-Host "  cleanup        - Clean up deployment" -ForegroundColor $Colors.White
     Write-Host "  setup-keycloak - Run Keycloak setup (use -ConvertToPublic for public client)" -ForegroundColor $Colors.White
-    Write-Host "  setup-k8s      - Setup Docker Desktop Kubernetes" -ForegroundColor $Colors.White
+    Write-Host "  setup-k8s      - Setup Minikube Kubernetes" -ForegroundColor $Colors.White
     Write-Host "  diagnose       - Show detailed Kubernetes and Istio diagnostics" -ForegroundColor $Colors.White
     Write-Host "  observability  - Show observability stack status and URLs" -ForegroundColor $Colors.White
     Write-Host "  clear-cache    - Clear Redis cache (app keys only, db, or all)" -ForegroundColor $Colors.White
@@ -1169,7 +1123,9 @@ function Show-Help {
     Write-Host "  • Traffic management with circuit breakers and retries" -ForegroundColor $Colors.White
     Write-Host ""
     Write-Host "🔧 Automatic Features:" -ForegroundColor $Colors.Green
-    Write-Host "  • Automatically installs Istio service mesh" -ForegroundColor $Colors.White
+    Write-Host "  • Automatically installs Minikube if not present" -ForegroundColor $Colors.White
+    Write-Host "  • Automatically starts Minikube cluster" -ForegroundColor $Colors.White
+    Write-Host "  • Automatically loads Docker images into Minikube" -ForegroundColor $Colors.White
     Write-Host "  • Deploys comprehensive observability stack" -ForegroundColor $Colors.White
     Write-Host "  • Enables automatic sidecar injection" -ForegroundColor $Colors.White
     Write-Host "  • Sets up traffic management and fault injection" -ForegroundColor $Colors.White
@@ -1177,25 +1133,27 @@ function Show-Help {
     Write-Host "  • Enhanced diagnostics for service mesh issues" -ForegroundColor $Colors.White
     Write-Host "  • Smart image pulling with policy management" -ForegroundColor $Colors.White
     Write-Host ""
-    Write-Host "🖼️ Image Management:" -ForegroundColor $Colors.Green
-    Write-Host "  • -ForcePullImages changes imagePullPolicy from 'Never' to 'Always'" -ForegroundColor $Colors.White
-    Write-Host "  • Forces Kubernetes to pull latest Docker images from registry" -ForegroundColor $Colors.White
-    Write-Host "  • Automatically restarts deployments to use new images" -ForegroundColor $Colors.White
-    Write-Host "  • Works with both 'deploy' and 'restart' actions" -ForegroundColor $Colors.White
-    Write-Host "  • Supports individual service updates (-Service api/wcf)" -ForegroundColor $Colors.White
+    Write-Host "📦 Image Management:" -ForegroundColor $Colors.Green
+    Write-Host "  • Automatically loads credittransfer-api:latest into Minikube" -ForegroundColor $Colors.White
+    Write-Host "  • Automatically loads credittransfer-wcf:latest into Minikube" -ForegroundColor $Colors.White
+    Write-Host "  • Automatically loads credittransfer-web:latest into Minikube" -ForegroundColor $Colors.White
+    Write-Host "  • Verifies images are available before deployment" -ForegroundColor $Colors.White
+    Write-Host "  • Falls back to registry pull if local images not found" -ForegroundColor $Colors.White
     Write-Host ""
-    Write-Host "🗄️ Cache Management:" -ForegroundColor $Colors.Green
-    Write-Host "  • clear-cache (default): Clear only CreditTransfer:* application keys" -ForegroundColor $Colors.White
-    Write-Host "  • clear-cache -Service db: Clear entire database 0" -ForegroundColor $Colors.White
-    Write-Host "  • clear-cache -Service all: Clear all Redis databases (requires confirmation)" -ForegroundColor $Colors.White
-    Write-Host "  • Automatic Redis health check before clearing cache" -ForegroundColor $Colors.White
-    Write-Host "  • Shows remaining key count after cache operations" -ForegroundColor $Colors.White
+    Write-Host "🎯 Minikube Features:" -ForegroundColor $Colors.Green
+    Write-Host "  • Automatic Minikube installation via Chocolatey or manual download" -ForegroundColor $Colors.White
+    Write-Host "  • Optimized resource configuration (4 CPUs, 8GB RAM, 20GB disk)" -ForegroundColor $Colors.White
+    Write-Host "  • Enabled addons: ingress, dashboard, metrics-server" -ForegroundColor $Colors.White
+    Write-Host "  • Automatic context switching to 'minikube'" -ForegroundColor $Colors.White
+    Write-Host "  • Health checks and diagnostics for Minikube cluster" -ForegroundColor $Colors.White
     Write-Host ""
     Write-Host "💡 Troubleshooting:" -ForegroundColor $Colors.Yellow
     Write-Host "  • If deployment fails: .\manage-deployment.ps1 -Action diagnose" -ForegroundColor $Colors.White
     Write-Host "  • For quick operations: add -SkipKubernetesCheck -SkipIstio" -ForegroundColor $Colors.White
     Write-Host "  • Check service mesh: .\manage-deployment.ps1 -Action observability" -ForegroundColor $Colors.White
     Write-Host "  • Access Kiali: .\manage-deployment.ps1 -Action port-forward -Service kiali" -ForegroundColor $Colors.White
+    Write-Host "  • Start Minikube manually: minikube start" -ForegroundColor $Colors.White
+    Write-Host "  • Check Minikube status: minikube status" -ForegroundColor $Colors.White
     Write-Host ""
 }
 
@@ -1398,6 +1356,60 @@ function Show-ObservabilityStatus {
     Write-Host ""
 }
 
+function Load-ImagesIntoMinikube {
+    Write-Status "Loading Docker images into Minikube..."
+    
+    $images = @(
+        "credittransfer-api:latest",
+        "credittransfer-wcf:latest", 
+        "credittransfer-web:latest"
+    )
+    
+    $success = $true
+    
+    foreach ($image in $images) {
+        Write-Progress "Loading $image into Minikube..."
+        
+        # Check if image exists locally first
+        $localImage = docker images $image --format "{{.Repository}}:{{.Tag}}" 2>$null
+        if ($localImage -eq $image) {
+            Write-Status "Found local image: $image"
+            
+            # Load image into Minikube
+            minikube image load $image
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "✅ Successfully loaded $image into Minikube"
+            } else {
+                Write-Error "❌ Failed to load $image into Minikube"
+                $success = $false
+            }
+        } else {
+            Write-Warning "⚠️ Local image $image not found. Please build the image first."
+            Write-Host "   Build with: docker build -t $image ." -ForegroundColor $Colors.Yellow
+            $success = $false
+        }
+    }
+    
+    if ($success) {
+        Write-Success "✅ All Credit Transfer images loaded into Minikube successfully!"
+        
+        # List loaded images for verification
+        Write-Status "Verifying images in Minikube:"
+        foreach ($image in $images) {
+            $minikubeImage = minikube image ls | Select-String $image.Split(':')[0] 2>$null
+            if ($minikubeImage) {
+                Write-Host "  ✅ $image" -ForegroundColor $Colors.Green
+            } else {
+                Write-Host "  ❌ $image (not found)" -ForegroundColor $Colors.Red
+            }
+        }
+    } else {
+        Write-Warning "⚠️ Some images failed to load. Deployment may use imagePullPolicy: Always to pull from registry."
+    }
+    
+    return $success
+}
+
 function Start-Deployment {
     Write-Status "Deploying Credit Transfer System with Istio Service Mesh..."
     
@@ -1437,9 +1449,6 @@ function Start-Deployment {
         Write-Warning "External SQL service configuration not found. You may need to configure SQL connectivity manually."
     }
 
-    # Apply external NoBill service configuration 
-   
-
     # Deploy external services for NoBill integration (additional proxy if needed)
     if (Test-Path "k8s-manifests/external-services.yaml") {
         Write-Status "Deploying external services for NoBill integration..."
@@ -1451,9 +1460,13 @@ function Start-Deployment {
         }
     }
     
-    # Apply test pod for connectivity testing
-    Write-Status "Deploying test pod for connectivity testing..."
-    kubectl apply -f k8s-manifests/test-pod.yaml
+    # Load Docker images into Minikube BEFORE applying manifests
+    Write-Status "Loading Credit Transfer Docker images into Minikube..."
+    if (Load-ImagesIntoMinikube) {
+        Write-Success "✅ All images loaded successfully into Minikube"
+    } else {
+        Write-Warning "⚠️ Some images failed to load. Pods may need to pull from registry."
+    }
     
     # Apply main application manifests AFTER external services are configured
     Write-Status "Applying main Kubernetes manifests..."
@@ -1467,8 +1480,6 @@ function Start-Deployment {
     kubectl apply -f k8s-manifests/monitoring.yaml
     kubectl apply -f k8s-manifests/kiali.yaml
     kubectl apply -f k8s-manifests/opentelemetry.yaml
-
-
     # Handle force image pull if requested
     if ($ForcePullImages) {
         Write-Status "Force pull images requested - updating image pull policy and restarting services..."
@@ -1495,7 +1506,18 @@ function Start-Deployment {
     # Wait for core services to be ready before applying Istio resources
     Write-Status "Waiting for core services to be ready..."
     
-   
+    Write-Progress "Waiting for Keycloak..."
+    kubectl wait --for=condition=ready pod -l app=keycloak -n credittransfer --timeout=120s
+    
+    Write-Progress "Waiting for API service..."
+    kubectl wait --for=condition=ready pod -l app=credittransfer-api -n credittransfer --timeout=120s
+    
+    Write-Progress "Waiting for WCF service..."
+    kubectl wait --for=condition=ready pod -l app=credittransfer-wcf -n credittransfer --timeout=120s
+    
+    Write-Progress "Waiting for Web Handler service..."
+    kubectl wait --for=condition=ready pod -l app=credittransfer-web -n credittransfer --timeout=120s
+    
     # Apply Istio-specific resources after main services are running
     if (-not $SkipIstio -and (Test-IstioInstalled)) {
         Write-Status "Applying Istio service mesh resources..."
@@ -1516,7 +1538,11 @@ function Start-Deployment {
     }
     
     # Wait for observability components
-
+    Write-Progress "Waiting for observability components..."
+    
+    kubectl wait --for=condition=ready pod -l app=jaeger -n credittransfer --timeout=180s
+    kubectl wait --for=condition=ready pod -l app=prometheus -n credittransfer --timeout=180s
+    kubectl wait --for=condition=ready pod -l app=grafana -n credittransfer --timeout=180s
     
     Write-Success "✅ Deployment completed successfully!"
     if ($ForcePullImages) {
@@ -1574,11 +1600,21 @@ function Show-KubernetesStatus {
     Write-Host ""
     Write-Host "🔍 Kubernetes & Istio Diagnostics:" -ForegroundColor $Colors.Yellow
     
-    # Check Docker Desktop status
-    if (Test-DockerDesktopRunning) {
-        Write-Host "  ✅ Docker Desktop: Running" -ForegroundColor $Colors.Green
+    # Check Minikube status
+    if (Test-MinikubeRunning) {
+        Write-Host "  ✅ Minikube: Running" -ForegroundColor $Colors.Green
+        
+        # Show Minikube IP
+        try {
+            $minikubeIP = minikube ip 2>$null
+            if ($minikubeIP) {
+                Write-Host "  📍 Minikube IP: $minikubeIP" -ForegroundColor $Colors.Blue
+            }
+        } catch {
+            # IP not available
+        }
     } else {
-        Write-Host "  ❌ Docker Desktop: Not Running" -ForegroundColor $Colors.Red
+        Write-Host "  ❌ Minikube: Not Running" -ForegroundColor $Colors.Red
     }
     
     # Check available contexts
@@ -2014,9 +2050,9 @@ function Clear-RedisCache {
 
 # Main execution
 Write-Host ""
-Write-Host "🚀 Credit Transfer System - Enhanced Deployment Manager" -ForegroundColor $Colors.Green
-Write-Host "With Istio Service Mesh & Comprehensive Observability" -ForegroundColor $Colors.Green
-Write-Host "====================================================" -ForegroundColor $Colors.Green
+Write-Host "🚀 Credit Transfer System - Enhanced Deployment Manager (Minikube)" -ForegroundColor $Colors.Green
+Write-Host "Enhanced with Istio Service Mesh & Comprehensive Observability" -ForegroundColor $Colors.Green
+Write-Host "================================================================" -ForegroundColor $Colors.Green
 
 # Skip Kubernetes check for help action or if explicitly requested
 if ($Action.ToLower() -ne "help" -and -not $SkipKubernetesCheck) {
@@ -2047,9 +2083,9 @@ switch ($Action.ToLower()) {
     }
     "setup-k8s" { 
         if (Ensure-KubernetesRunning) {
-            Write-Success "Docker Desktop Kubernetes setup completed successfully!"
+            Write-Success "Minikube Kubernetes setup completed successfully!"
         } else {
-            Write-Error "Failed to setup Docker Desktop Kubernetes"
+            Write-Error "Failed to setup Minikube Kubernetes"
         }
     }
     "test-external" {
@@ -2206,10 +2242,14 @@ switch ($Action.ToLower()) {
         Show-KubernetesStatus
         
         Write-Host "🛠️ Manual Commands to Try:" -ForegroundColor $Colors.Yellow
+        Write-Host "  # Minikube" -ForegroundColor $Colors.White
+        Write-Host "  minikube status" -ForegroundColor $Colors.White
+        Write-Host "  minikube ip" -ForegroundColor $Colors.White
+        Write-Host "  minikube dashboard" -ForegroundColor $Colors.White
+        Write-Host ""
         Write-Host "  # Kubernetes" -ForegroundColor $Colors.White
-        Write-Host "  docker info" -ForegroundColor $Colors.White
         Write-Host "  kubectl config get-contexts" -ForegroundColor $Colors.White
-        Write-Host "  kubectl config use-context docker-desktop" -ForegroundColor $Colors.White
+        Write-Host "  kubectl config use-context minikube" -ForegroundColor $Colors.White
         Write-Host "  kubectl cluster-info" -ForegroundColor $Colors.White
         Write-Host "  kubectl get nodes" -ForegroundColor $Colors.White
         Write-Host ""
