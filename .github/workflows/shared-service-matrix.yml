@@ -70,13 +70,13 @@ jobs:
         SERVICES='${{ inputs.services }}'
         echo "🔍 Input services: $SERVICES"
         
-        # Define service configurations
+        # Define service configurations (Updated to match actual project structure)
         cat > service-config.json << 'EOF'
         {
           "api": {
             "name": "api",
             "display_name": "REST API",
-            "dockerfile": "src/Services/RestApi/CreditTransfer.Services.RestApi/Dockerfile",
+            "dockerfile": "src/Services/ApiServices/CreditTransferApi/Dockerfile",
             "image": "credittransfer-api",
             "port": 8080,
             "health_path": "/health",
@@ -103,7 +103,7 @@ jobs:
           "web": {
             "name": "web",
             "display_name": "Web Application",
-            "dockerfile": "src/Web/CreditTransfer.Web/Dockerfile",
+            "dockerfile": "src/Services/WebServices/CreditTransferWeb/Dockerfile",
             "image": "credittransfer-web",
             "port": 80,
             "health_path": "/health",

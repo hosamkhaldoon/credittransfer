@@ -1,4 +1,4 @@
-name: "CI/CD - Build, Test & Deploy"
+name: "CI/CD - Build, Test & Deploy (Modular)"
 
 on:
   push:
@@ -6,9 +6,16 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - '.github/workflows/test-modular-*.yml'
+      - '.github/workflows/quick-demo.yml'
  
   workflow_dispatch:
     inputs:
+      services:
+        description: 'Services to build (JSON array)'
+        required: false
+        default: '["wcf", "api", "worker"]'
+        type: string
       run_performance_tests:
         description: 'Run performance tests'
         required: false
@@ -19,6 +26,15 @@ on:
         required: false
         default: false
         type: boolean
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'prod'
+        type: choice
+        options:
+          - 'dev'
+          - 'staging'
+          - 'prod'
 
 env:
   # .NET Configuration
@@ -43,19 +59,21 @@ env:
   DOCKER_NAMESPACE: 'dockerhosam'
 
 jobs:
-  # Job 1: Setup and Build
-  build:
-    name: "🏗️ Build & Analyze"
+  # Job 1: Setup and Build using shared workflow
+  setup-and-build:
+    name: "🏗️ Setup & Build (.NET)"
+    uses: ./.github/workflows/shared-setup-dotnet.yml
+    with:
+      dotnet-version: '9.0.x'
+      working-directory: './Migrated'
+      solution-file: 'CreditTransfer.Modern.sln'
+      configuration: 'Release'
+
+  # Job 2: Generate Version and Check Deployment
+  version-and-deploy-check:
+    name: "📊 Version & Deploy Check"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    
-    permissions:
-      contents: read
-      actions: read
-      checks: write
-      pull-requests: write
-      statuses: write
-    
+    needs: [setup-and-build]
     outputs:
       version: ${{ steps.version.outputs.version }}
       build-number: ${{ steps.version.outputs.build-number }}
@@ -65,12 +83,7 @@ jobs:
     - name: "📥 Checkout Code"
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0 # Required for GitVersion
-
-    - name: "🔧 Setup .NET"
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+        fetch-depth: 0
 
     - name: "📊 Generate Version"
       id: version
@@ -91,36 +104,32 @@ jobs:
         echo "git-commit-short=${GIT_COMMIT_SHORT}" >> $GITHUB_OUTPUT
         echo "Generated version: ${VERSION}"
 
-    - name: "📦 Cache NuGet Packages"
-      uses: actions/cache@v4
-      with:
-        path: ~/.nuget/packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-nuget-
-
-    - name: "🔄 Restore Dependencies"
+    - name: "🚢 Check Deployment Conditions"
+      id: deploy-check
       run: |
-        if [ ! -f "${{ env.SOLUTION_FILE }}" ]; then
-          echo "❌ Solution file not found at ${{ env.SOLUTION_FILE }}"
-          echo "Current directory contents:"
-          ls -la
-          echo "Migrated directory contents:"
-          ls -la Migrated/ || echo "Migrated directory not found"
-          exit 1
+        echo "🔍 Deployment Condition Debug:"
+        echo "   github.ref: ${{ github.ref }}"
+        echo "   github.ref_name: ${{ github.ref_name }}"
+        echo "   github.event_name: ${{ github.event_name }}"
+        echo "   inputs.force_docker_push: ${{ inputs.force_docker_push }}"
+        
+        SHOULD_DEPLOY="false"
+        
+        # Deploy on migrated branch OR manual force OR workflow_dispatch
+        if [ "${{ github.ref }}" == "refs/heads/migrated" ] || \
+           [ "${{ inputs.force_docker_push }}" == "true" ] || \
+           [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          SHOULD_DEPLOY="true"
+          echo "✅ Deployment condition met!"
+        else
+          echo "❌ Deployment conditions not met"
+          echo "💡 To force deployment:"
+          echo "   - Push to migrated branch, OR"
+          echo "   - Use 'Run workflow' with force_docker_push=true"
         fi
         
-        echo "📦 Restoring NuGet packages..."
-        dotnet restore "${{ env.SOLUTION_FILE }}" --verbosity normal
-
-    - name: "🏗️ Build Solution"
-      run: |
-        echo "🔨 Building .NET Solution..."
-        dotnet build "${{ env.SOLUTION_FILE }}" \
-          --configuration ${{ env.BUILD_CONFIGURATION }} \
-          --no-restore \
-          --verbosity normal \
-          /p:Version=${{ steps.version.outputs.version }}
+        echo "should-deploy=${SHOULD_DEPLOY}" >> $GITHUB_OUTPUT
+        echo "🚢 Final decision - Should deploy: ${SHOULD_DEPLOY}"
 
     - name: "🧪 Run Tests"
       run: |
@@ -315,11 +324,11 @@ jobs:
           echo "⚠️ Coverage report not generated" >> $GITHUB_STEP_SUMMARY
         fi
 
-  # Job 2: Integration Tests
+  # Job 3: Integration Tests
   integration-tests:
     name: "🧪 Integration Tests"
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [setup-and-build]
     timeout-minutes: 25
     if: ${{ !failure() }}  # Re-enabled - will run integration test projects
     
@@ -533,102 +542,29 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "📝 **Note**: SQL Server removed from CI due to reliability issues in GitHub Actions environment"
 
-  # Job 3: Docker Build & Push
+  # Job 4: Docker Build & Push using Matrix Strategy
   docker:
-    name: "🐳 Docker Build & Push"
-    runs-on: ubuntu-latest
-    needs: [build]
-    timeout-minutes: 20
-    if: ${{ !failure() && needs.build.outputs.should-deploy == 'true' }}
-    
-    steps:
-    - name: "📥 Checkout Code"
-      uses: actions/checkout@v4
+    name: "🐳 Docker Build & Push (Matrix)"
+    needs: [version-and-deploy-check]
+    if: ${{ !failure() && needs.version-and-deploy-check.outputs.should-deploy == 'true' }}
+    uses: ./.github/workflows/shared-service-matrix.yml
+    with:
+      operation: 'build'
+      services: ${{ inputs.services || '["wcf", "api", "worker"]' }}
+      environment: ${{ inputs.environment || 'prod' }}
+      registry: 'docker.io'
+      push-images: true
+      version-tag: ${{ needs.version-and-deploy-check.outputs.build-number }}
+      working-directory: './Migrated'
+    secrets:
+      registry-username: ${{ secrets.DOCKER_USERNAME }}
+      registry-password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: "🔧 Set up Docker Buildx"
-      uses: docker/setup-buildx-action@v3
-
-    - name: "🔑 Login to Docker Hub"
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    - name: "📥 Download Build Artifacts"
-      uses: actions/download-artifact@v4
-      with:
-        name: published-applications-${{ needs.build.outputs.version }}
-        path: Migrated/publish/
-
-    - name: "🏷️ Extract Metadata"
-      id: meta
-      run: |
-        DOCKER_TAG="${{ needs.build.outputs.build-number }}"
-        echo "docker-tag=${DOCKER_TAG}" >> $GITHUB_OUTPUT
-        echo "🏷️ Docker tag: ${DOCKER_TAG}"
-
-    - name: "🐳 Build and Push WCF Service"
-      if: ${{ hashFiles('Migrated/src/Services/WebServices/CreditTransferService/Dockerfile') != '' }}
-      uses: docker/build-push-action@v5
-      with:
-        context: ./Migrated
-        file: ./Migrated/src/Services/WebServices/CreditTransferService/Dockerfile
-        push: true
-        tags: |
-          ${{ env.DOCKER_NAMESPACE }}/wcf-service:${{ steps.meta.outputs.docker-tag }}
-          ${{ env.DOCKER_NAMESPACE }}/wcf-service:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          VERSION=${{ needs.build.outputs.version }}
-
-    - name: "🐳 Build and Push REST API"
-      if: ${{ hashFiles('Migrated/src/Services/ApiServices/CreditTransferApi/Dockerfile') != '' }}
-      uses: docker/build-push-action@v5
-      with:
-        context: ./Migrated
-        file: ./Migrated/src/Services/ApiServices/CreditTransferApi/Dockerfile
-        push: true
-        tags: |
-          ${{ env.DOCKER_NAMESPACE }}/rest-api:${{ steps.meta.outputs.docker-tag }}
-          ${{ env.DOCKER_NAMESPACE }}/rest-api:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          VERSION=${{ needs.build.outputs.version }}
-
-    - name: "🐳 Build and Push Worker Service"
-      if: ${{ hashFiles('Migrated/src/Services/WorkerServices/CreditTransferWorker/Dockerfile') != '' }}
-      uses: docker/build-push-action@v5
-      with:
-        context: ./Migrated
-        file: ./Migrated/src/Services/WorkerServices/CreditTransferWorker/Dockerfile
-        push: true
-        tags: |
-          ${{ env.DOCKER_NAMESPACE }}/worker-service:${{ steps.meta.outputs.docker-tag }}
-          ${{ env.DOCKER_NAMESPACE }}/worker-service:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          VERSION=${{ needs.build.outputs.version }}
-
-    - name: "📋 Docker Build Summary"
-      run: |
-        echo "## 🐳 Docker Images Built" >> $GITHUB_STEP_SUMMARY
-        echo "- **Tag**: ${{ steps.meta.outputs.docker-tag }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Registry**: Docker Hub" >> $GITHUB_STEP_SUMMARY
-        echo "- **Namespace**: ${{ env.DOCKER_NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📦 Available Images:" >> $GITHUB_STEP_SUMMARY
-        echo "- [WCF Service](https://hub.docker.com/r/${{ env.DOCKER_NAMESPACE }}/wcf-service)" >> $GITHUB_STEP_SUMMARY
-        echo "- [REST API](https://hub.docker.com/r/${{ env.DOCKER_NAMESPACE }}/rest-api)" >> $GITHUB_STEP_SUMMARY
-        echo "- [Worker Service](https://hub.docker.com/r/${{ env.DOCKER_NAMESPACE }}/worker-service)" >> $GITHUB_STEP_SUMMARY
-
-  # Job 4: Security Analysis
+  # Job 5: Security Analysis
   security:
     name: "🔒 Security Analysis"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [setup-and-build]
     timeout-minutes: 15
     if: ${{ !failure() }}
     
@@ -688,11 +624,11 @@ jobs:
         category: "/language:csharp"
       continue-on-error: true
 
-  # Job 5: Performance Tests (Optional)
+  # Job 6: Performance Tests (Optional)
   performance:
     name: "⚡ Performance Tests"
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [setup-and-build]
     timeout-minutes: 30
     if: ${{ !failure() && (inputs.run_performance_tests || github.ref == 'refs/heads/migrated') }}
     
@@ -773,11 +709,11 @@ jobs:
           echo "- **Note**: Performance tests may not be configured or Category=Performance not found" >> $GITHUB_STEP_SUMMARY
         fi
 
-  # Job 6: Deployment Summary
+  # Job 7: Deployment Summary
   summary:
     name: "📊 Deployment Summary"
     runs-on: ubuntu-latest
-    needs: [build, integration-tests, docker, security, performance]
+    needs: [setup-and-build, version-and-deploy-check, integration-tests, docker, security, performance]
     if: always()
     
     steps:
@@ -786,15 +722,15 @@ jobs:
         echo "# 🚀 CreditTransfer.Modern CI/CD Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## 📋 Build Information" >> $GITHUB_STEP_SUMMARY
-        echo "- **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Number**: ${{ needs.build.outputs.build-number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ needs.version-and-deploy-check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Number**: ${{ needs.version-and-deploy-check.outputs.build-number }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## 🧪 Pipeline Results" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build & Analysis**: ${{ needs.build.result == 'success' && '✅ Passed' || (needs.build.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Setup & Build**: ${{ needs.setup-and-build.result == 'success' && '✅ Passed' || (needs.setup-and-build.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Integration Tests**: ${{ needs.integration-tests.result == 'success' && '✅ Passed' || (needs.integration-tests.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Docker Build**: ${{ needs.docker.result == 'success' && '✅ Passed' || (needs.docker.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Security Analysis**: ${{ needs.security.result == 'success' && '✅ Passed' || (needs.security.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }}" >> $GITHUB_STEP_SUMMARY
@@ -802,11 +738,12 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         
         # Deployment status
-        if [ "${{ needs.build.outputs.should-deploy }}" == "true" ] && [ "${{ needs.docker.result }}" == "success" ]; then
+        if [ "${{ needs.version-and-deploy-check.outputs.should-deploy }}" == "true" ] && [ "${{ needs.docker.result }}" == "success" ]; then
           echo "## 🚀 Deployment Status: ✅ DEPLOYED" >> $GITHUB_STEP_SUMMARY
           echo "- **Docker Images**: Available on [Docker Hub](https://hub.docker.com/u/${{ env.DOCKER_NAMESPACE }})" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-        elif [ "${{ needs.build.outputs.should-deploy }}" == "true" ]; then
+          echo "- **Version**: ${{ needs.version-and-deploy-check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Services Built**: ${{ inputs.services || '["wcf", "api", "worker"]' }}" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.version-and-deploy-check.outputs.should-deploy }}" == "true" ]; then
           echo "## 🚀 Deployment Status: ⚠️ PARTIAL" >> $GITHUB_STEP_SUMMARY
           echo "- Build completed but Docker deployment failed" >> $GITHUB_STEP_SUMMARY
         else
@@ -815,11 +752,17 @@ jobs:
         fi
         
         # Overall status
-        if [ "${{ needs.build.result }}" == "success" ] && \
+        if [ "${{ needs.setup-and-build.result }}" == "success" ] && \
            [ "${{ needs.integration-tests.result }}" == "success" ] && \
            ([ "${{ needs.security.result }}" == "success" ] || [ "${{ needs.security.result }}" == "skipped" ]); then
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🎉 Overall Status: ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Modular Architecture Benefits Demonstrated:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Code Reduction**: Eliminated 60+ duplicate Docker build lines" >> $GITHUB_STEP_SUMMARY
+          echo "- **Matrix Strategy**: ${{ inputs.services || '["wcf", "api", "worker"]' }} services built in parallel" >> $GITHUB_STEP_SUMMARY
+          echo "- **Shared Workflows**: Reusable .NET setup and service matrix" >> $GITHUB_STEP_SUMMARY
+          echo "- **Maintainability**: Single source of truth for service configurations" >> $GITHUB_STEP_SUMMARY
         else
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## ⚠️ Overall Status: ❌ FAILED" >> $GITHUB_STEP_SUMMARY
@@ -830,12 +773,12 @@ jobs:
       uses: 8398a7/action-slack@v3
       with:
         status: ${{ 
-          (needs.build.result == 'failure' || 
+          (needs.setup-and-build.result == 'failure' || 
            needs.integration-tests.result == 'failure' || 
            needs.docker.result == 'failure' || 
            needs.security.result == 'failure' || 
            needs.performance.result == 'failure') && 'failure' || 
-          (needs.build.result == 'cancelled' || 
+          (needs.setup-and-build.result == 'cancelled' || 
            needs.integration-tests.result == 'cancelled' || 
            needs.docker.result == 'cancelled' || 
            needs.security.result == 'cancelled' || 
@@ -843,10 +786,10 @@ jobs:
           'success' }}
         fields: repo,message,commit,author,action,eventName,ref,workflow
         text: |
-          🚀 **CI/CD Pipeline Results:**
-          🏗️ Build: ${{ needs.build.result == 'success' && '✅' || needs.build.result == 'failure' && '❌' || '⏭️' }} ${{ needs.build.result }}
+          🚀 **Modular CI/CD Pipeline Results:**
+          🏗️ Setup & Build: ${{ needs.setup-and-build.result == 'success' && '✅' || needs.setup-and-build.result == 'failure' && '❌' || '⏭️' }} ${{ needs.setup-and-build.result }}
           🧪 Integration: ${{ needs.integration-tests.result == 'success' && '✅' || needs.integration-tests.result == 'failure' && '❌' || '⏭️' }} ${{ needs.integration-tests.result }}
-          🐳 Docker: ${{ needs.docker.result == 'success' && '✅' || needs.docker.result == 'failure' && '❌' || '⏭️' }} ${{ needs.docker.result }}
+          🐳 Docker Matrix: ${{ needs.docker.result == 'success' && '✅' || needs.docker.result == 'failure' && '❌' || '⏭️' }} ${{ needs.docker.result }}
           🔒 Security: ${{ needs.security.result == 'success' && '✅' || needs.security.result == 'failure' && '❌' || '⏭️' }} ${{ needs.security.result }}
           ⚡ Performance: ${{ needs.performance.result == 'success' && '✅' || needs.performance.result == 'failure' && '❌' || '⏭️' }} ${{ needs.performance.result }}
       env:
@@ -858,13 +801,13 @@ jobs:
       run: |
         # Calculate overall pipeline status
         OVERALL_STATUS="success"
-        if [ "${{ needs.build.result }}" == "failure" ] || \
+        if [ "${{ needs.setup-and-build.result }}" == "failure" ] || \
            [ "${{ needs.integration-tests.result }}" == "failure" ] || \
            [ "${{ needs.docker.result }}" == "failure" ] || \
            [ "${{ needs.security.result }}" == "failure" ] || \
            [ "${{ needs.performance.result }}" == "failure" ]; then
           OVERALL_STATUS="failure"
-        elif [ "${{ needs.build.result }}" == "cancelled" ] || \
+        elif [ "${{ needs.setup-and-build.result }}" == "cancelled" ] || \
              [ "${{ needs.integration-tests.result }}" == "cancelled" ] || \
              [ "${{ needs.docker.result }}" == "cancelled" ] || \
              [ "${{ needs.security.result }}" == "cancelled" ] || \
@@ -893,9 +836,9 @@ jobs:
           
           # Build result with emoji
           BUILD_EMOJI="⏭️"
-          [ "${{ needs.build.result }}" == "success" ] && BUILD_EMOJI="✅"
-          [ "${{ needs.build.result }}" == "failure" ] && BUILD_EMOJI="❌"
-          echo "🏗️ **Build**: $BUILD_EMOJI ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+          [ "${{ needs.setup-and-build.result }}" == "success" ] && BUILD_EMOJI="✅"
+          [ "${{ needs.setup-and-build.result }}" == "failure" ] && BUILD_EMOJI="❌"
+          echo "🏗️ **Setup & Build**: $BUILD_EMOJI ${{ needs.setup-and-build.result }}" >> $GITHUB_STEP_SUMMARY
           
           # Integration Tests result with emoji
           INTEGRATION_EMOJI="⏭️"
@@ -922,9 +865,15 @@ jobs:
           echo "⚡ **Performance**: $PERFORMANCE_EMOJI ${{ needs.performance.result }}" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📋 **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "📋 **Version**: ${{ needs.version-and-deploy-check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "🌿 **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "👤 **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Modular Architecture Highlights:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Matrix Strategy**: Services built with shared-service-matrix.yml" >> $GITHUB_STEP_SUMMARY
+          echo "- **Shared Workflows**: .NET setup using shared-setup-dotnet.yml" >> $GITHUB_STEP_SUMMARY
+          echo "- **Code Reduction**: 60+ lines eliminated via modular approach" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reusability**: Components can be reused across repositories" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "💡 **Note**: To enable Slack notifications, add SLACK_WEBHOOK_URL to repository secrets" >> $GITHUB_STEP_SUMMARY
         else
