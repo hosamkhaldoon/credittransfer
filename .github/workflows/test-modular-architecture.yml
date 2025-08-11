@@ -60,7 +60,7 @@ jobs:
       environment: ${{ inputs.test_environment }}
       registry: 'docker.io'
       push-images: false  # Don't push during testing
-      version-tag: ${{ env.TEST_VERSION }}
+      version-tag: 'test-${{ github.run_number }}'
       working-directory: './Migrated'
     secrets:
       registry-username: ${{ secrets.DOCKER_USERNAME }}
