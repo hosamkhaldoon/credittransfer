@@ -23,7 +23,7 @@ on:
           - secrets
 
 env:
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '8.0.100'
 
 jobs:
   # Job 1: Static Application Security Testing (SAST)

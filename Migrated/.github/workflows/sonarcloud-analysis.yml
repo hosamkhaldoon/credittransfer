@@ -30,7 +30,7 @@ on:
         type: boolean
 
 env:
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '8.0.100'
   SONAR_SCANNER_VERSION: '5.0.1.3006'
   BUILD_CONFIGURATION: Release
 

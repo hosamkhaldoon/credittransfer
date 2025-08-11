@@ -33,7 +33,7 @@ on:
         type: boolean
 
 env:
-  DOTNET_VERSION: '9.0.x'
+  DOTNET_VERSION: '8.0.100'
   TEST_VERSION: 'test-${{ github.run_number }}'
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
     if: ${{ inputs.test_component == 'all' || inputs.test_component == 'dotnet-setup' }}
     uses: ./.github/workflows/shared-setup-dotnet.yml
     with:
-      dotnet-version: '9.0.x'
+      dotnet-version: '8.0.100''
       working-directory: './Migrated'
       solution-file: 'CreditTransfer.Modern.sln'
       configuration: 'Release'

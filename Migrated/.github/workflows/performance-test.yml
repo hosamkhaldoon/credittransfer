@@ -47,7 +47,7 @@ on:
           - development
 
 env:
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '8.0.100'
   K6_VERSION: '0.47.0'
   ARTILLERY_VERSION: 'latest'
 
