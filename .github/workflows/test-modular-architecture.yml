@@ -34,7 +34,6 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.100'
-  TEST_VERSION: 'test-${{ github.run_number }}'
 
 jobs:
   # Test 1: .NET Setup Workflow
@@ -143,7 +142,7 @@ jobs:
         echo "- **Component Tested**: ${{ inputs.test_component }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Services**: ${{ inputs.services_to_test }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Environment**: ${{ inputs.test_environment }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Test Version**: ${{ env.TEST_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Test Version**: test-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Public Access**: ${{ inputs.expose_sonarqube && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
