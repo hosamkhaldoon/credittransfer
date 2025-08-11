@@ -43,7 +43,7 @@ jobs:
     if: ${{ inputs.test_component == 'all' || inputs.test_component == 'dotnet-setup' }}
     uses: ./.github/workflows/shared-setup-dotnet.yml
     with:
-      dotnet-version: '8.0.100''
+      dotnet-version: '8.0.100'
       working-directory: './Migrated'
       solution-file: 'CreditTransfer.Modern.sln'
       configuration: 'Release'
