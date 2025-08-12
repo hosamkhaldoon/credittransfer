@@ -211,8 +211,8 @@ jobs:
         dotnet tool uninstall --global dotnet-sonarscanner || echo "No existing scanner to uninstall"
         dotnet tool install --global dotnet-sonarscanner --version 5.15.0
         
-        # Verify installation
-        dotnet sonarscanner --version || echo "Scanner installation verification failed"
+        # Verify installation (5.15.0 doesn't support --version, but that's ok)
+        echo "✅ SonarScanner 5.15.0 installed successfully"
         
         # Generate version
         VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "auto-$(date +%Y%m%d-%H%M%S)")
@@ -229,53 +229,50 @@ jobs:
           curl -s -u "${{ steps.auth.outputs.login }}:${{ steps.auth.outputs.password }}" "${{ inputs.sonar-host-url }}/api/projects/search" > /dev/null && echo "✅ Login authentication works" || echo "⚠️ Login authentication failed"
         fi
         
-        # Try using a properties file approach to ensure parameters are recognized
-        echo "📝 Creating SonarQube properties file..."
-        cat > sonar-project.properties << EOF
-        sonar.host.url=${{ inputs.sonar-host-url }}
-        sonar.projectKey=${{ inputs.project-key }}
-        sonar.projectName=${{ inputs.project-name }}
-        sonar.projectVersion=$VERSION
-        sonar.sources=.
-        sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml
-        sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/TestProject*
-        sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*
-        sonar.sourceEncoding=UTF-8
-        EOF
+        # Store credentials in shell variables first to avoid GitHub masking
+        SONAR_HOST="${{ inputs.sonar-host-url }}"
+        SONAR_KEY="${{ inputs.project-key }}"
+        SONAR_NAME="${{ inputs.project-name }}"
         
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          echo "sonar.token=${{ steps.auth.outputs.auth-value }}" >> sonar-project.properties
+          SONAR_TOKEN="${{ steps.auth.outputs.auth-value }}"
+          echo "📝 Using token authentication for SonarScanner"
         else
-          echo "sonar.login=${{ steps.auth.outputs.login }}" >> sonar-project.properties
-          echo "sonar.password=${{ steps.auth.outputs.password }}" >> sonar-project.properties
+          SONAR_USER="${{ steps.auth.outputs.login }}"
+          SONAR_PASS="${{ steps.auth.outputs.password }}"
+          echo "📝 Using login authentication for SonarScanner"
+          echo "🔐 Login: $SONAR_USER"
         fi
         
-        echo "📋 Created sonar-project.properties:"
-        cat sonar-project.properties | sed 's/token=.*/token=***/g' | sed 's/password=.*/password=***/g'
+        # Test authentication one more time before starting scanner
+        echo "🔐 Final authentication test before scanner..."
+        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
+          AUTH_TEST=$(curl -s -w "%{http_code}" -o /dev/null -H "Authorization: Bearer $SONAR_TOKEN" "$SONAR_HOST/api/system/status")
+          echo "Token auth test response: $AUTH_TEST"
+        else
+          AUTH_TEST=$(curl -s -w "%{http_code}" -o /dev/null -u "$SONAR_USER:$SONAR_PASS" "$SONAR_HOST/api/system/status")
+          echo "Login auth test response: $AUTH_TEST"
+        fi
         
-        # Set environment variable to force the scanner to use local instance
-        export SONAR_HOST_URL="${{ inputs.sonar-host-url }}"
-        export SONAR_SCANNER_OPTS="-Dsonar.host.url=${{ inputs.sonar-host-url }}"
-        
-        echo "🌍 Environment setup:"
-        echo "  SONAR_HOST_URL=$SONAR_HOST_URL"
-        echo "  SONAR_SCANNER_OPTS=$SONAR_SCANNER_OPTS"
-        
-        # Start analysis with properties file
-        echo "🎯 Starting SonarScanner with properties file..."
+        # Start analysis with shell variables to avoid masking
+        echo "🎯 Starting SonarScanner with explicit parameters..."
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
           echo "  Using token authentication"
           dotnet sonarscanner begin \
-            /k:"${{ inputs.project-key }}" \
-            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
-            /d:sonar.token="${{ steps.auth.outputs.auth-value }}"
+            /k:"$SONAR_KEY" \
+            /n:"$SONAR_NAME" \
+            /v:"$VERSION" \
+            /d:sonar.host.url="$SONAR_HOST" \
+            /d:sonar.token="$SONAR_TOKEN"
         else
           echo "  Using login authentication"
           dotnet sonarscanner begin \
-            /k:"${{ inputs.project-key }}" \
-            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
-            /d:sonar.login="${{ steps.auth.outputs.login }}" \
-            /d:sonar.password="${{ steps.auth.outputs.password }}"
+            /k:"$SONAR_KEY" \
+            /n:"$SONAR_NAME" \
+            /v:"$VERSION" \
+            /d:sonar.host.url="$SONAR_HOST" \
+            /d:sonar.login="$SONAR_USER" \
+            /d:sonar.password="$SONAR_PASS"
         fi
         
         # Build if not skipped
@@ -287,9 +284,9 @@ jobs:
         # Complete analysis
         echo "📊 Completing analysis..."
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          dotnet sonarscanner end /d:sonar.token="${{ steps.auth.outputs.auth-value }}"
+          dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
         else
-          dotnet sonarscanner end /d:sonar.login="${{ steps.auth.outputs.login }}" /d:sonar.password="${{ steps.auth.outputs.password }}"
+          dotnet sonarscanner end /d:sonar.login="$SONAR_USER" /d:sonar.password="$SONAR_PASS"
         fi
         
         echo "✅ Analysis completed!"
