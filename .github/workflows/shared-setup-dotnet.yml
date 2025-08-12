@@ -17,7 +17,7 @@ on:
       solution-file:
         description: 'Solution file to build'
         required: false
-        default: 'CreditTransfer.Modern.sln'
+        default: '*.sln'
         type: string
       configuration:
         description: 'Build configuration'
