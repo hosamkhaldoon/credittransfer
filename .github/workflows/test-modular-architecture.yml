@@ -44,7 +44,7 @@ jobs:
   # Test 1: .NET Setup Workflow
   test-dotnet-setup:
     name: "🔧 Test: .NET Setup"
-    if: ${{ inputs.test_component == 'all' || inputs.test_component == 'dotnet-setup' }}
+    if: ${{ github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'dotnet-setup' }}
     uses: ./.github/workflows/shared-setup-dotnet.yml
     with:
       dotnet-version: '8.0.100'
@@ -55,13 +55,13 @@ jobs:
   # Test 2: Service Matrix - Build Operation
   test-service-matrix-build:
     name: "🔨 Test: Service Matrix (Build)"
-    if: ${{ inputs.test_component == 'all' || inputs.test_component == 'service-matrix' }}
+    if: ${{ github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'service-matrix' }}
     needs: [test-dotnet-setup]
     uses: ./.github/workflows/shared-service-matrix.yml
     with:
       operation: 'build'
-      services: ${{ inputs.services_to_test }}
-      environment: ${{ inputs.test_environment }}
+      services: ${{ inputs.services_to_test || '["wcf", "api"]' }}
+      environment: ${{ inputs.test_environment || 'dev' }}
       registry: 'docker.io'
       push-images: false  # Don't push during testing
       version-tag: 'test-${{ github.run_number }}'
@@ -73,7 +73,7 @@ jobs:
   # Test 3: SonarQube Analysis
   test-sonarqube:
     name: "🔍 Test: SonarQube Analysis"
-    if: ${{ inputs.test_component == 'all' || inputs.test_component == 'sonarqube-analysis' }}
+    if: ${{ github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'sonarqube-analysis' }}
     needs: [test-dotnet-setup]
     uses: ./.github/workflows/shared-sonarqube-analysis.yml
     with:
@@ -91,7 +91,7 @@ jobs:
   test-ngrok-access:
     name: "🌐 Test: Public Access"
     runs-on: ubuntu-latest
-    if: ${{ (inputs.test_component == 'all' || inputs.test_component == 'ngrok-access') && inputs.expose_sonarqube }}
+    if: ${{ (github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'ngrok-access') && (github.event_name == 'push' || inputs.expose_sonarqube) }}
     needs: [test-sonarqube]
     timeout-minutes: 45
     
@@ -111,25 +111,25 @@ jobs:
   # Test 5: Service Matrix - Test Operation
   test-service-matrix-test:
     name: "🧪 Test: Service Matrix (Test)"
-    if: ${{ inputs.test_component == 'all' || inputs.test_component == 'service-matrix' }}
+    if: ${{ github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'service-matrix' }}
     needs: [test-service-matrix-build]
     uses: ./.github/workflows/shared-service-matrix.yml
     with:
       operation: 'test'
-      services: ${{ inputs.services_to_test }}
-      environment: ${{ inputs.test_environment }}
+      services: ${{ inputs.services_to_test || '["wcf", "api"]' }}
+      environment: ${{ inputs.test_environment || 'dev' }}
       working-directory: './Migrated'
 
   # Test 6: Service Matrix - Health Check
   test-service-matrix-health:
     name: "🏥 Test: Service Matrix (Health)"
-    if: ${{ inputs.test_component == 'all' || inputs.test_component == 'service-matrix' }}
+    if: ${{ github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'service-matrix' }}
     needs: [test-service-matrix-test]
     uses: ./.github/workflows/shared-service-matrix.yml
     with:
       operation: 'health-check'
-      services: ${{ inputs.services_to_test }}
-      environment: ${{ inputs.test_environment }}
+      services: ${{ inputs.services_to_test || '["wcf", "api"]' }}
+      environment: ${{ inputs.test_environment || 'dev' }}
 
   # Summary of all tests
   test-summary:
@@ -144,9 +144,9 @@ jobs:
         echo "# 🧪 Modular Architecture Test Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## 📋 Test Configuration" >> $GITHUB_STEP_SUMMARY
-        echo "- **Component Tested**: ${{ inputs.test_component }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Services**: ${{ inputs.services_to_test }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Environment**: ${{ inputs.test_environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Component Tested**: ${{ inputs.test_component || 'all (auto-triggered)' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Services**: ${{ inputs.services_to_test || '[\"wcf\", \"api\"]' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: ${{ inputs.test_environment || 'dev' }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Test Version**: test-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Public Access**: ${{ inputs.expose_sonarqube && 'Enabled' || 'Disabled' }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -166,7 +166,7 @@ jobs:
         
         # Service Matrix Build
         if [ "${{ needs.test-service-matrix-build.result }}" = "success" ]; then
-          echo "| 🔨 Service Build | ✅ Success | Services: ${{ inputs.services_to_test }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔨 Service Build | ✅ Success | Services: ${{ inputs.services_to_test || '[\"wcf\", \"api\"]' }} |" >> $GITHUB_STEP_SUMMARY
         elif [ "${{ needs.test-service-matrix-build.result }}" = "skipped" ]; then
           echo "| 🔨 Service Build | ⏭️ Skipped | Not requested |" >> $GITHUB_STEP_SUMMARY
         else
