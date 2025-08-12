@@ -206,8 +206,13 @@ jobs:
       run: |
         echo "🔍 Running SonarQube analysis..."
         
-        # Install scanner
-        dotnet tool install --global dotnet-sonarscanner || echo "Scanner already installed"
+        # Install specific version of scanner that works reliably with local SonarQube
+        echo "🔧 Installing SonarScanner for .NET..."
+        dotnet tool uninstall --global dotnet-sonarscanner || echo "No existing scanner to uninstall"
+        dotnet tool install --global dotnet-sonarscanner --version 5.15.0
+        
+        # Verify installation
+        dotnet sonarscanner --version || echo "Scanner installation verification failed"
         
         # Generate version
         VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "auto-$(date +%Y%m%d-%H%M%S)")
@@ -224,50 +229,53 @@ jobs:
           curl -s -u "${{ steps.auth.outputs.login }}:${{ steps.auth.outputs.password }}" "${{ inputs.sonar-host-url }}/api/projects/search" > /dev/null && echo "✅ Login authentication works" || echo "⚠️ Login authentication failed"
         fi
         
-        # Start analysis with explicit parameters (avoiding complex quoting issues)
-        echo "🎯 Starting SonarScanner with parameters:"
-        echo "  Project Key: ${{ inputs.project-key }}"
-        echo "  Project Name: ${{ inputs.project-name }}"
-        echo "  Version: $VERSION"
-        echo "  Host URL: ${{ inputs.sonar-host-url }}"
-        
-        # Store credentials in shell variables to avoid GitHub masking issues
-        SONAR_URL="${{ inputs.sonar-host-url }}"
-        SONAR_PROJECT_KEY="${{ inputs.project-key }}"
-        SONAR_PROJECT_NAME="${{ inputs.project-name }}"
+        # Try using a properties file approach to ensure parameters are recognized
+        echo "📝 Creating SonarQube properties file..."
+        cat > sonar-project.properties << EOF
+        sonar.host.url=${{ inputs.sonar-host-url }}
+        sonar.projectKey=${{ inputs.project-key }}
+        sonar.projectName=${{ inputs.project-name }}
+        sonar.projectVersion=$VERSION
+        sonar.sources=.
+        sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml
+        sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/TestProject*
+        sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*
+        sonar.sourceEncoding=UTF-8
+        EOF
         
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          echo "  Auth: Token (***)"
-          SONAR_AUTH_TOKEN="${{ steps.auth.outputs.auth-value }}"
-          
-          echo "🎯 Running SonarScanner with token authentication..."
-          dotnet sonarscanner begin \
-            "/k:$SONAR_PROJECT_KEY" \
-            "/n:$SONAR_PROJECT_NAME" \
-            "/v:$VERSION" \
-            "/d:sonar.host.url=$SONAR_URL" \
-            "/d:sonar.token=$SONAR_AUTH_TOKEN" \
-            "/d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml" \
-            "/d:sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/TestProject*" \
-            "/d:sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
-            "/d:sonar.sourceEncoding=UTF-8"
+          echo "sonar.token=${{ steps.auth.outputs.auth-value }}" >> sonar-project.properties
         else
-          echo "  Auth: Login (${{ steps.auth.outputs.login }})"
-          SONAR_AUTH_LOGIN="${{ steps.auth.outputs.login }}"
-          SONAR_AUTH_PASSWORD="${{ steps.auth.outputs.password }}"
-          
-          echo "🎯 Running SonarScanner with login authentication..."
+          echo "sonar.login=${{ steps.auth.outputs.login }}" >> sonar-project.properties
+          echo "sonar.password=${{ steps.auth.outputs.password }}" >> sonar-project.properties
+        fi
+        
+        echo "📋 Created sonar-project.properties:"
+        cat sonar-project.properties | sed 's/token=.*/token=***/g' | sed 's/password=.*/password=***/g'
+        
+        # Set environment variable to force the scanner to use local instance
+        export SONAR_HOST_URL="${{ inputs.sonar-host-url }}"
+        export SONAR_SCANNER_OPTS="-Dsonar.host.url=${{ inputs.sonar-host-url }}"
+        
+        echo "🌍 Environment setup:"
+        echo "  SONAR_HOST_URL=$SONAR_HOST_URL"
+        echo "  SONAR_SCANNER_OPTS=$SONAR_SCANNER_OPTS"
+        
+        # Start analysis with properties file
+        echo "🎯 Starting SonarScanner with properties file..."
+        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
+          echo "  Using token authentication"
           dotnet sonarscanner begin \
-            "/k:$SONAR_PROJECT_KEY" \
-            "/n:$SONAR_PROJECT_NAME" \
-            "/v:$VERSION" \
-            "/d:sonar.host.url=$SONAR_URL" \
-            "/d:sonar.login=$SONAR_AUTH_LOGIN" \
-            "/d:sonar.password=$SONAR_AUTH_PASSWORD" \
-            "/d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml" \
-            "/d:sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/TestProject*" \
-            "/d:sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
-            "/d:sonar.sourceEncoding=UTF-8"
+            /k:"${{ inputs.project-key }}" \
+            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
+            /d:sonar.token="${{ steps.auth.outputs.auth-value }}"
+        else
+          echo "  Using login authentication"
+          dotnet sonarscanner begin \
+            /k:"${{ inputs.project-key }}" \
+            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
+            /d:sonar.login="${{ steps.auth.outputs.login }}" \
+            /d:sonar.password="${{ steps.auth.outputs.password }}"
         fi
         
         # Build if not skipped
@@ -279,9 +287,9 @@ jobs:
         # Complete analysis
         echo "📊 Completing analysis..."
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          dotnet sonarscanner end "/d:sonar.token=$SONAR_AUTH_TOKEN"
+          dotnet sonarscanner end /d:sonar.token="${{ steps.auth.outputs.auth-value }}"
         else
-          dotnet sonarscanner end "/d:sonar.login=$SONAR_AUTH_LOGIN" "/d:sonar.password=$SONAR_AUTH_PASSWORD"
+          dotnet sonarscanner end /d:sonar.login="${{ steps.auth.outputs.login }}" /d:sonar.password="${{ steps.auth.outputs.password }}"
         fi
         
         echo "✅ Analysis completed!"
