@@ -158,7 +158,9 @@ jobs:
         echo "📊 Final matrix (${SERVICE_COUNT} services):"
         echo "$MATRIX_JSON" | jq '.'
         
-        echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+        # Compact the JSON and properly escape for GitHub Actions output
+        MATRIX_JSON_COMPACT=$(echo "$MATRIX_JSON" | jq -c '.')
+        echo "matrix=$MATRIX_JSON_COMPACT" >> $GITHUB_OUTPUT
         echo "service-count=$SERVICE_COUNT" >> $GITHUB_OUTPUT
         
         # Cleanup
