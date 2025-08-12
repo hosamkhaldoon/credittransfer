@@ -82,18 +82,48 @@ jobs:
     - name: "⏳ Wait for SonarQube"
       run: |
         echo "⏳ Waiting for SonarQube to be ready..."
+        echo "🔗 Checking SonarQube at: ${{ inputs.sonar-host-url }}"
+        
         for i in {1..60}; do
-          if curl -s -f ${{ inputs.sonar-host-url }}/api/system/status | grep -q "UP"; then
-            echo "✅ SonarQube is ready!"
-            break
+          echo "🔍 Attempt $i/60: Testing connection..."
+          
+          # Test basic connectivity
+          if curl -s -f "${{ inputs.sonar-host-url }}/api/system/status" > /tmp/sonar_status.json 2>/dev/null; then
+            echo "📋 SonarQube response:"
+            cat /tmp/sonar_status.json
+            
+            if grep -q "UP" /tmp/sonar_status.json; then
+              echo "✅ SonarQube is ready!"
+              break
+            else
+              echo "⚠️ SonarQube responded but not in UP status"
+            fi
+          else
+            echo "❌ No response from SonarQube (attempt $i/60)"
+            # Test if the service is even reachable
+            if curl -s --connect-timeout 5 "${{ inputs.sonar-host-url }}" > /dev/null 2>&1; then
+              echo "🔗 SonarQube port is reachable, but API not ready"
+            else
+              echo "💔 SonarQube port is not reachable"
+            fi
           fi
-          echo "⏳ Still starting up... (${i}/60)"
+          
+          if [ $i -eq 60 ]; then
+            echo "❌ SonarQube failed to start within 5 minutes"
+            echo "🔍 Final status check:"
+            curl -v "${{ inputs.sonar-host-url }}/api/system/status" || echo "Final connection failed"
+            exit 1
+          fi
+          
+          echo "⏳ Waiting 5 seconds before retry..."
           sleep 5
         done
 
     - name: "🔐 Setup Authentication"
       id: auth
       run: |
+        echo "🔐 Setting up SonarQube authentication..."
+        
         # Priority: token > explicit login/password > default admin
         if [ -n "${{ secrets.sonar-token }}" ]; then
           echo "auth-method=token" >> $GITHUB_OUTPUT
@@ -103,17 +133,41 @@ jobs:
           echo "auth-method=login" >> $GITHUB_OUTPUT
           echo "login=${{ secrets.sonar-login }}" >> $GITHUB_OUTPUT
           echo "password=${{ secrets.sonar-password }}" >> $GITHUB_OUTPUT
-          echo "✅ Using provided login credentials"
+          echo "✅ Using provided login credentials (login: ${{ secrets.sonar-login }})"
+          
+          # Test the provided credentials
+          echo "🧪 Testing provided credentials..."
+          if curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/authentication/validate" | grep -q "valid.*true"; then
+            echo "✅ Provided credentials are valid"
+          else
+            echo "⚠️ Warning: Provided credentials may not be valid yet"
+          fi
         else
           echo "auth-method=default" >> $GITHUB_OUTPUT
           echo "✅ Using default admin credentials"
           
           # Setup default admin password
+          echo "🔧 Setting up default admin password..."
           sleep 10
-          curl -s -u admin:admin -X POST "${{ inputs.sonar-host-url }}/api/users/change_password" \
-            -d "login=admin" \
-            -d "password=admin123" \
-            -d "previousPassword=admin" || echo "Password setup attempted"
+          
+          # Check if admin password is already changed
+          if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/authentication/validate" | grep -q "valid.*true"; then
+            echo "✅ Admin password already set to admin123"
+          else
+            echo "🔄 Changing default admin password..."
+            curl -s -u admin:admin -X POST "${{ inputs.sonar-host-url }}/api/users/change_password" \
+              -d "login=admin" \
+              -d "password=admin123" \
+              -d "previousPassword=admin" && echo "✅ Password changed successfully" || echo "⚠️ Password change attempted"
+            
+            # Wait a moment and test the new password
+            sleep 5
+            if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/authentication/validate" | grep -q "valid.*true"; then
+              echo "✅ New password is working"
+            else
+              echo "❌ New password validation failed"
+            fi
+          fi
           
           echo "login=admin" >> $GITHUB_OUTPUT
           echo "password=admin123" >> $GITHUB_OUTPUT
@@ -160,9 +214,25 @@ jobs:
         
         echo "🚀 Starting analysis for version: $VERSION"
         echo "🔗 Host URL being used: ${{ inputs.sonar-host-url }}"
+        echo "🔐 Authentication method: ${{ steps.auth.outputs.auth-method }}"
+        
+        # Test connectivity before starting scanner
+        echo "🧪 Testing SonarQube connectivity before analysis..."
+        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
+          curl -s -H "Authorization: Bearer ${{ steps.auth.outputs.auth-value }}" "${{ inputs.sonar-host-url }}/api/projects/search" > /dev/null && echo "✅ Token authentication works" || echo "⚠️ Token authentication failed"
+        else
+          curl -s -u "${{ steps.auth.outputs.login }}:${{ steps.auth.outputs.password }}" "${{ inputs.sonar-host-url }}/api/projects/search" > /dev/null && echo "✅ Login authentication works" || echo "⚠️ Login authentication failed"
+        fi
         
         # Start analysis with explicit parameters (avoiding complex quoting issues)
+        echo "🎯 Starting SonarScanner with parameters:"
+        echo "  Project Key: ${{ inputs.project-key }}"
+        echo "  Project Name: ${{ inputs.project-name }}"
+        echo "  Version: $VERSION"
+        echo "  Host URL: ${{ inputs.sonar-host-url }}"
+        
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
+          echo "  Auth: Token (***)"
           dotnet sonarscanner begin \
             /k:"${{ inputs.project-key }}" \
             /n:"${{ inputs.project-name }}" \
@@ -174,6 +244,7 @@ jobs:
             /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
             /d:sonar.sourceEncoding=UTF-8
         else
+          echo "  Auth: Login (${{ steps.auth.outputs.login }})"
           dotnet sonarscanner begin \
             /k:"${{ inputs.project-key }}" \
             /n:"${{ inputs.project-name }}" \
