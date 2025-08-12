@@ -2,6 +2,11 @@
 name: "🧪 Test Modular Architecture"
 
 on:
+  push:
+    branches: [ migrated ]
+    paths:
+      - '.github/workflows/**'
+      - 'Migrated/**'
   workflow_dispatch:
     inputs:
       test_component:
