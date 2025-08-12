@@ -277,25 +277,34 @@ jobs:
           echo "Login auth test response: $AUTH_TEST"
         fi
         
-        # Start analysis with shell variables to avoid masking
-        echo "🎯 Starting SonarScanner with explicit parameters..."
+        # Set up environment variables for SonarScanner (more reliable for 5.15.0)
+        export SONAR_HOST_URL="$SONAR_HOST"
+        
+        # Start analysis with environment variables + minimal parameters
+        echo "🎯 Starting SonarScanner with environment variables and minimal parameters..."
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          echo "  Using token authentication"
+          echo "  Using token authentication via environment variables"
+          export SONAR_TOKEN="$SONAR_TOKEN"
+          unset SONAR_LOGIN SONAR_PASSWORD
+          
+          echo "🌍 Environment: SONAR_HOST_URL=$SONAR_HOST_URL, SONAR_TOKEN=***"
+          
           dotnet sonarscanner begin \
             /k:"$SONAR_KEY" \
             /n:"$SONAR_NAME" \
-            /v:"$VERSION" \
-            /d:sonar.host.url="$SONAR_HOST" \
-            /d:sonar.token="$SONAR_TOKEN"
+            /v:"$VERSION"
         else
-          echo "  Using login authentication"
+          echo "  Using login authentication via environment variables"
+          export SONAR_LOGIN="$SONAR_USER"
+          export SONAR_PASSWORD="$SONAR_PASS"
+          unset SONAR_TOKEN
+          
+          echo "🌍 Environment: SONAR_HOST_URL=$SONAR_HOST_URL, SONAR_LOGIN=$SONAR_USER"
+          
           dotnet sonarscanner begin \
             /k:"$SONAR_KEY" \
             /n:"$SONAR_NAME" \
-            /v:"$VERSION" \
-            /d:sonar.host.url="$SONAR_HOST" \
-            /d:sonar.login="$SONAR_USER" \
-            /d:sonar.password="$SONAR_PASS"
+            /v:"$VERSION"
         fi
         
         # Build if not skipped
@@ -306,11 +315,8 @@ jobs:
         
         # Complete analysis
         echo "📊 Completing analysis..."
-        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
-        else
-          dotnet sonarscanner end /d:sonar.login="$SONAR_USER" /d:sonar.password="$SONAR_PASS"
-        fi
+        echo "🌍 Using environment variables for scanner end command"
+        dotnet sonarscanner end
         
         echo "✅ Analysis completed!"
         echo "🔗 View results at: ${{ inputs.sonar-host-url }}/dashboard?id=${{ inputs.project-key }}"
