@@ -68,7 +68,10 @@ jobs:
         echo "📋 Generating service matrix for operation: ${{ inputs.operation }}"
         
         # Parse input services or use default
-        SERVICES='${{ inputs.services || ''["wcf", "api"]'' }}'
+        SERVICES='${{ inputs.services }}'
+        if [ -z "$SERVICES" ] || [ "$SERVICES" = "null" ]; then
+          SERVICES='["wcf", "api"]'
+        fi
         echo "🔍 Input services: $SERVICES"
         
         # Define service configurations (Updated to match actual project structure)

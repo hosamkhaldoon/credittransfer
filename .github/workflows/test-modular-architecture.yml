@@ -3,7 +3,12 @@ name: "🧪 Test Modular Architecture"
 
 on:
   push:
-    branches: [ migrated ]
+    branches: [ main, master, migrated ]
+    paths:
+      - '.github/workflows/**'
+      - 'Migrated/**'
+  pull_request:
+    branches: [ main, master, migrated ]
     paths:
       - '.github/workflows/**'
       - 'Migrated/**'
