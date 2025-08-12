@@ -229,13 +229,13 @@ jobs:
       run: |
         echo "🔍 Running SonarQube analysis..."
         
-        # Install specific version of scanner that works reliably with local SonarQube
+        # Install newer version of scanner with better authentication support
         echo "🔧 Installing SonarScanner for .NET..."
         dotnet tool uninstall --global dotnet-sonarscanner || echo "No existing scanner to uninstall"
-        dotnet tool install --global dotnet-sonarscanner --version 5.15.0
+        dotnet tool install --global dotnet-sonarscanner --version 6.2.0
         
-        # Verify installation (5.15.0 doesn't support --version, but that's ok)
-        echo "✅ SonarScanner 5.15.0 installed successfully"
+        # Verify installation
+        echo "✅ SonarScanner 6.2.0 installed successfully"
         
         # Generate version
         VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "auto-$(date +%Y%m%d-%H%M%S)")
@@ -277,34 +277,25 @@ jobs:
           echo "Login auth test response: $AUTH_TEST"
         fi
         
-        # Set up environment variables for SonarScanner (more reliable for 5.15.0)
-        export SONAR_HOST_URL="$SONAR_HOST"
-        
-        # Start analysis with environment variables + minimal parameters
-        echo "🎯 Starting SonarScanner with environment variables and minimal parameters..."
+        # SonarScanner 6.2.0 with improved authentication (command-line parameters work better)
+        echo "🎯 Starting SonarScanner 6.2.0 with explicit parameters..."
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          echo "  Using token authentication via environment variables"
-          export SONAR_TOKEN="$SONAR_TOKEN"
-          unset SONAR_LOGIN SONAR_PASSWORD
-          
-          echo "🌍 Environment: SONAR_HOST_URL=$SONAR_HOST_URL, SONAR_TOKEN=***"
-          
+          echo "  Using token authentication"
           dotnet sonarscanner begin \
             /k:"$SONAR_KEY" \
             /n:"$SONAR_NAME" \
-            /v:"$VERSION"
+            /v:"$VERSION" \
+            /d:sonar.host.url="$SONAR_HOST" \
+            /d:sonar.token="$SONAR_TOKEN"
         else
-          echo "  Using login authentication via environment variables"
-          export SONAR_LOGIN="$SONAR_USER"
-          export SONAR_PASSWORD="$SONAR_PASS"
-          unset SONAR_TOKEN
-          
-          echo "🌍 Environment: SONAR_HOST_URL=$SONAR_HOST_URL, SONAR_LOGIN=$SONAR_USER"
-          
+          echo "  Using login/password authentication"
           dotnet sonarscanner begin \
             /k:"$SONAR_KEY" \
             /n:"$SONAR_NAME" \
-            /v:"$VERSION"
+            /v:"$VERSION" \
+            /d:sonar.host.url="$SONAR_HOST" \
+            /d:sonar.login="$SONAR_USER" \
+            /d:sonar.password="$SONAR_PASS"
         fi
         
         # Build if not skipped
@@ -313,10 +304,15 @@ jobs:
           dotnet build ${{ inputs.solution-file }} --configuration Release --verbosity minimal
         fi
         
-        # Complete analysis
+        # Complete analysis with appropriate authentication
         echo "📊 Completing analysis..."
-        echo "🌍 Using environment variables for scanner end command"
-        dotnet sonarscanner end
+        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
+          echo "🎯 Ending analysis with token authentication"
+          dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+        else
+          echo "🎯 Ending analysis with login authentication"
+          dotnet sonarscanner end /d:sonar.login="$SONAR_USER" /d:sonar.password="$SONAR_PASS"
+        fi
         
         echo "✅ Analysis completed!"
         echo "🔗 View results at: ${{ inputs.sonar-host-url }}/dashboard?id=${{ inputs.project-key }}"
