@@ -231,34 +231,44 @@ jobs:
         echo "  Version: $VERSION"
         echo "  Host URL: ${{ inputs.sonar-host-url }}"
         
-        # Use environment variables for SonarScanner (recommended approach)
-        export SONAR_HOST_URL="${{ inputs.sonar-host-url }}"
+        # Store credentials in shell variables to avoid GitHub masking issues
+        SONAR_URL="${{ inputs.sonar-host-url }}"
+        SONAR_PROJECT_KEY="${{ inputs.project-key }}"
+        SONAR_PROJECT_NAME="${{ inputs.project-name }}"
         
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
           echo "  Auth: Token (***)"
-          export SONAR_TOKEN="${{ steps.auth.outputs.auth-value }}"
-          unset SONAR_LOGIN SONAR_PASSWORD
+          SONAR_AUTH_TOKEN="${{ steps.auth.outputs.auth-value }}"
+          
+          echo "🎯 Running SonarScanner with token authentication..."
+          dotnet sonarscanner begin \
+            "/k:$SONAR_PROJECT_KEY" \
+            "/n:$SONAR_PROJECT_NAME" \
+            "/v:$VERSION" \
+            "/d:sonar.host.url=$SONAR_URL" \
+            "/d:sonar.token=$SONAR_AUTH_TOKEN" \
+            "/d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml" \
+            "/d:sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/TestProject*" \
+            "/d:sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
+            "/d:sonar.sourceEncoding=UTF-8"
         else
           echo "  Auth: Login (${{ steps.auth.outputs.login }})"
-          export SONAR_LOGIN="${{ steps.auth.outputs.login }}"
-          export SONAR_PASSWORD="${{ steps.auth.outputs.password }}"
-          unset SONAR_TOKEN
+          SONAR_AUTH_LOGIN="${{ steps.auth.outputs.login }}"
+          SONAR_AUTH_PASSWORD="${{ steps.auth.outputs.password }}"
+          
+          echo "🎯 Running SonarScanner with login authentication..."
+          dotnet sonarscanner begin \
+            "/k:$SONAR_PROJECT_KEY" \
+            "/n:$SONAR_PROJECT_NAME" \
+            "/v:$VERSION" \
+            "/d:sonar.host.url=$SONAR_URL" \
+            "/d:sonar.login=$SONAR_AUTH_LOGIN" \
+            "/d:sonar.password=$SONAR_AUTH_PASSWORD" \
+            "/d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml" \
+            "/d:sonar.coverage.exclusions=**/*Test*,**/*Tests*,**/TestProject*" \
+            "/d:sonar.exclusions=**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
+            "/d:sonar.sourceEncoding=UTF-8"
         fi
-        
-        echo "🌍 Environment variables set:"
-        echo "  SONAR_HOST_URL=$SONAR_HOST_URL"
-        echo "  SONAR_LOGIN=${SONAR_LOGIN:-"(not set)"}"
-        echo "  SONAR_TOKEN=${SONAR_TOKEN:+***}"
-        
-        # Start scanner with minimal parameters (let environment variables handle the rest)
-        dotnet sonarscanner begin \
-          /k:"${{ inputs.project-key }}" \
-          /n:"${{ inputs.project-name }}" \
-          /v:"$VERSION" \
-          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
-          /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/TestProject*" \
-          /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
-          /d:sonar.sourceEncoding=UTF-8
         
         # Build if not skipped
         if [ "${{ inputs.skip-build }}" != "true" ]; then
@@ -268,8 +278,11 @@ jobs:
         
         # Complete analysis
         echo "📊 Completing analysis..."
-        echo "🌍 Using environment variables for authentication..."
-        dotnet sonarscanner end
+        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
+          dotnet sonarscanner end "/d:sonar.token=$SONAR_AUTH_TOKEN"
+        else
+          dotnet sonarscanner end "/d:sonar.login=$SONAR_AUTH_LOGIN" "/d:sonar.password=$SONAR_AUTH_PASSWORD"
+        fi
         
         echo "✅ Analysis completed!"
         echo "🔗 View results at: ${{ inputs.sonar-host-url }}/dashboard?id=${{ inputs.project-key }}"
