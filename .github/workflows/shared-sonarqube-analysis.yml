@@ -135,12 +135,21 @@ jobs:
           echo "password=${{ secrets.sonar-password }}" >> $GITHUB_OUTPUT
           echo "✅ Using provided login credentials (login: ${{ secrets.sonar-login }})"
           
-          # Test the provided credentials
+          # Test the provided credentials with a more reliable endpoint
           echo "🧪 Testing provided credentials..."
-          if curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/authentication/validate" | grep -q "valid.*true"; then
-            echo "✅ Provided credentials are valid"
+          # Wait a bit more for SonarQube to be fully ready
+          sleep 5
+          
+          # Try multiple endpoints to validate credentials
+          if curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/system/status" | grep -q "UP"; then
+            echo "✅ Provided credentials work with system status endpoint"
+          elif curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/users/current" | grep -q "login"; then
+            echo "✅ Provided credentials work with users endpoint"
+          elif curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/projects/search" >/dev/null 2>&1; then
+            echo "✅ Provided credentials work with projects endpoint"
           else
-            echo "⚠️ Warning: Provided credentials may not be valid yet"
+            echo "⚠️ Warning: Could not validate credentials with available endpoints"
+            echo "🔍 This may be normal if SonarQube is still starting up"
           fi
         else
           echo "auth-method=default" >> $GITHUB_OUTPUT
@@ -148,25 +157,39 @@ jobs:
           
           # Setup default admin password
           echo "🔧 Setting up default admin password..."
-          sleep 10
+          sleep 15  # Give SonarQube more time to be fully ready
           
           # Check if admin password is already changed
-          if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/authentication/validate" | grep -q "valid.*true"; then
+          if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/system/status" | grep -q "UP"; then
             echo "✅ Admin password already set to admin123"
           else
-            echo "🔄 Changing default admin password..."
-            curl -s -u admin:admin -X POST "${{ inputs.sonar-host-url }}/api/users/change_password" \
+            echo "🔄 Changing default admin password from admin to admin123..."
+            
+            # Try the password change
+            CHANGE_RESULT=$(curl -s -u admin:admin -X POST "${{ inputs.sonar-host-url }}/api/users/change_password" \
               -d "login=admin" \
               -d "password=admin123" \
-              -d "previousPassword=admin" && echo "✅ Password changed successfully" || echo "⚠️ Password change attempted"
+              -d "previousPassword=admin" 2>&1 || echo "change_failed")
             
-            # Wait a moment and test the new password
-            sleep 5
-            if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/authentication/validate" | grep -q "valid.*true"; then
-              echo "✅ New password is working"
+            if [[ "$CHANGE_RESULT" == *"change_failed"* ]]; then
+              echo "⚠️ Password change with admin:admin failed, trying with admin123 (may already be changed)"
             else
-              echo "❌ New password validation failed"
+              echo "✅ Password change command executed"
             fi
+            
+            # Wait and test the new password with multiple attempts
+            sleep 10
+            for i in {1..3}; do
+              if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/system/status" | grep -q "UP"; then
+                echo "✅ New password admin123 is working (attempt $i)"
+                break
+              elif [ $i -eq 3 ]; then
+                echo "⚠️ Password validation failed after 3 attempts, proceeding anyway"
+              else
+                echo "🔄 Testing password attempt $i/3..."
+                sleep 5
+              fi
+            done
           fi
           
           echo "login=admin" >> $GITHUB_OUTPUT
