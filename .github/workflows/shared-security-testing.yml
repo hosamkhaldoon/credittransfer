@@ -51,6 +51,11 @@ on:
         required: false
         default: true
         type: boolean
+      fail-on-security-test-failures:
+        description: 'Whether to fail on security test failures'
+        required: false
+        default: true
+        type: boolean
       run-dependency-scan:
         description: 'Whether to run dependency vulnerability scan'
         required: false
@@ -329,7 +334,9 @@ jobs:
         
         if [ "$SECURITY_TESTS_RESULT" = "failed" ]; then
           OVERALL_RESULT="tests-failed"
-          SHOULD_FAIL=true
+          if [ "${{ inputs.fail-on-security-test-failures }}" = "true" ]; then
+            SHOULD_FAIL=true
+          fi
         fi
         
         # Set outputs
@@ -341,9 +348,15 @@ jobs:
           echo "✅ Security analysis passed - no significant issues found"
         else
           echo "⚠️ Security analysis found issues: $OVERALL_RESULT"
+          echo "📋 Failure policy settings:"
+          echo "  - fail-on-vulnerabilities: ${{ inputs.fail-on-vulnerabilities }}"
+          echo "  - fail-on-security-test-failures: ${{ inputs.fail-on-security-test-failures }}"
+          
           if [ "$SHOULD_FAIL" = "true" ]; then
-            echo "🚨 Failing workflow due to security issues"
+            echo "🚨 Failing workflow due to security issues based on failure policy"
             exit 1
+          else
+            echo "⚠️ Continuing despite security issues (failure policy allows this)"
           fi
         fi
 

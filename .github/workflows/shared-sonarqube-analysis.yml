@@ -158,25 +158,34 @@ jobs:
         # Generate version
         VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo "auto-$(date +%Y%m%d-%H%M%S)")
         
-        # Prepare scanner arguments
-        SCANNER_ARGS="/k:\"${{ inputs.project-key }}\" /n:\"${{ inputs.project-name }}\" /v:\"$VERSION\" /d:sonar.host.url=\"${{ inputs.sonar-host-url }}\""
-        
-        # Add authentication
-        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          SCANNER_ARGS="$SCANNER_ARGS /d:sonar.token=\"${{ steps.auth.outputs.auth-value }}\""
-        else
-          SCANNER_ARGS="$SCANNER_ARGS /d:sonar.login=\"${{ steps.auth.outputs.login }}\" /d:sonar.password=\"${{ steps.auth.outputs.password }}\""
-        fi
-        
-        # Add analysis configuration
-        SCANNER_ARGS="$SCANNER_ARGS \
-          /d:sonar.cs.opencover.reportsPaths=\"**/coverage.opencover.xml\" \
-          /d:sonar.coverage.exclusions=\"**/*Test*,**/*Tests*,**/TestProject*\" \
-          /d:sonar.exclusions=\"**/bin/**/*,**/obj/**/*,**/node_modules/**/*\" \
-          /d:sonar.sourceEncoding=UTF-8"
-        
         echo "🚀 Starting analysis for version: $VERSION"
-        eval "dotnet sonarscanner begin $SCANNER_ARGS"
+        echo "🔗 Host URL being used: ${{ inputs.sonar-host-url }}"
+        
+        # Start analysis with explicit parameters (avoiding complex quoting issues)
+        if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
+          dotnet sonarscanner begin \
+            /k:"${{ inputs.project-key }}" \
+            /n:"${{ inputs.project-name }}" \
+            /v:"$VERSION" \
+            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
+            /d:sonar.token="${{ steps.auth.outputs.auth-value }}" \
+            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
+            /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/TestProject*" \
+            /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
+            /d:sonar.sourceEncoding=UTF-8
+        else
+          dotnet sonarscanner begin \
+            /k:"${{ inputs.project-key }}" \
+            /n:"${{ inputs.project-name }}" \
+            /v:"$VERSION" \
+            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
+            /d:sonar.login="${{ steps.auth.outputs.login }}" \
+            /d:sonar.password="${{ steps.auth.outputs.password }}" \
+            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
+            /d:sonar.coverage.exclusions="**/*Test*,**/*Tests*,**/TestProject*" \
+            /d:sonar.exclusions="**/bin/**/*,**/obj/**/*,**/node_modules/**/*" \
+            /d:sonar.sourceEncoding=UTF-8
+        fi
         
         # Build if not skipped
         if [ "${{ inputs.skip-build }}" != "true" ]; then

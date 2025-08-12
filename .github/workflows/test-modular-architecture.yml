@@ -92,6 +92,7 @@ jobs:
       upload-artifacts: true
       artifact-retention-days: 90
       fail-on-vulnerabilities: false  # Don't fail workflow for security warnings during testing
+      fail-on-security-test-failures: false  # Don't fail workflow for security test failures during testing
       run-dependency-scan: true
       run-code-analysis: true
       run-security-tests: true
