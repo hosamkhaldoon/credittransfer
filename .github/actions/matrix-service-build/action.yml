@@ -84,8 +84,54 @@ runs:
       uses: docker/login-action@v3
       with:
         registry: ${{ inputs.registry }}
-        username: ${{ inputs.registry-username }}
+        username: ${{ inputs.registry-username || github.repository_owner }}
         password: ${{ inputs.registry-password }}
+
+    - name: "📦 Ensure Docker Hub repository exists"
+      if: inputs.push-image == 'true' && inputs.registry == 'docker.io'
+      shell: bash
+      run: |
+        set -e
+        IMAGE_FULL="${{ inputs.image-name }}"
+        NAMESPACE="${IMAGE_FULL%%/*}"
+        REPO="${IMAGE_FULL##*/}"
+        if [ -z "$NAMESPACE" ] || [ -z "$REPO" ] || [ "$NAMESPACE" = "$REPO" ]; then
+          echo "❌ Invalid image-name: $IMAGE_FULL (expected <namespace>/<repo>)"
+          exit 1
+        fi
+        echo "🔎 Ensuring Docker Hub repo exists: $NAMESPACE/$REPO"
+        if ! command -v jq >/dev/null 2>&1; then
+          sudo apt-get update -y && sudo apt-get install -y jq >/dev/null 2>&1
+        fi
+        AUTH_USER='${{ inputs.registry-username || github.repository_owner }}'
+        AUTH_PASS='${{ inputs.registry-password }}'
+        if [ -z "$AUTH_USER" ] || [ -z "$AUTH_PASS" ]; then
+          echo "⚠️ Missing Docker Hub credentials; cannot auto-create repository."
+          exit 0
+        fi
+        TOKEN=$(curl -s -H "Content-Type: application/json" -X POST \
+          -d "{\"username\": \"$AUTH_USER\", \"password\": \"$AUTH_PASS\"}" \
+          https://hub.docker.com/v2/users/login/ | jq -r '.token')
+        if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+          echo "⚠️ Failed to obtain Docker Hub JWT. Skipping repo creation."
+          exit 0
+        fi
+        # Check existence
+        EXISTS_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: JWT $TOKEN" \
+          https://hub.docker.com/v2/repositories/$NAMESPACE/$REPO/)
+        if [ "$EXISTS_CODE" = "200" ]; then
+          echo "✅ Repository already exists"
+          exit 0
+        fi
+        echo "🆕 Creating repository $NAMESPACE/$REPO on Docker Hub (public)"
+        CREATE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: JWT $TOKEN" \
+          -H "Content-Type: application/json" -X POST https://hub.docker.com/v2/repositories/ \
+          -d "{\"namespace\":\"$NAMESPACE\",\"name\":\"$REPO\",\"is_private\":false}")
+        if [ "$CREATE_CODE" = "201" ] || [ "$CREATE_CODE" = "200" ]; then
+          echo "✅ Repository created or already available"
+        else
+          echo "⚠️ Failed to create repository (status $CREATE_CODE). Push may still succeed if repo exists."
+        fi
 
     - name: "🏷️ Extract Metadata"
       id: meta

@@ -191,7 +191,7 @@ jobs:
         service-display-name: ${{ matrix.display_name }}
         dockerfile-path: ${{ matrix.working_directory }}/${{ matrix.dockerfile }}
         context-path: ${{ matrix.working_directory }}
-        image-name: ${{ github.repository_owner }}/${{ matrix.image }}
+        image-name: ${{ (secrets.registry-username != '' && secrets.registry-username) || github.repository_owner }}/${{ matrix.image }}
         registry: ${{ matrix.registry }}
         push-image: ${{ inputs.push-images }}
         version-tag: ${{ matrix.version_tag }}
