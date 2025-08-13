@@ -152,16 +152,18 @@ jobs:
             echo "🔍 This may be normal if SonarQube is still starting up"
           fi
         else
-          echo "auth-method=default" >> $GITHUB_OUTPUT
-          echo "✅ Using default admin credentials"
+          echo "auth-method=scanner-token" >> $GITHUB_OUTPUT
+          echo "✅ Setting up scanner-specific authentication with token"
           
-          # Setup default admin password
+          # Setup default admin password first
           echo "🔧 Setting up default admin password..."
           sleep 15  # Give SonarQube more time to be fully ready
           
           # Check if admin password is already changed
+          ADMIN_READY=false
           if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/system/status" | grep -q "UP"; then
             echo "✅ Admin password already set to admin123"
+            ADMIN_READY=true
           else
             echo "🔄 Changing default admin password from admin to admin123..."
             
@@ -182,9 +184,11 @@ jobs:
             for i in {1..3}; do
               if curl -s -u admin:admin123 "${{ inputs.sonar-host-url }}/api/system/status" | grep -q "UP"; then
                 echo "✅ New password admin123 is working (attempt $i)"
+                ADMIN_READY=true
                 break
               elif [ $i -eq 3 ]; then
                 echo "⚠️ Password validation failed after 3 attempts, proceeding anyway"
+                ADMIN_READY=true
               else
                 echo "🔄 Testing password attempt $i/3..."
                 sleep 5
@@ -192,19 +196,60 @@ jobs:
             done
           fi
           
-          echo "login=admin" >> $GITHUB_OUTPUT
-          echo "password=admin123" >> $GITHUB_OUTPUT
+          if [ "$ADMIN_READY" = "true" ]; then
+            # Create scanner user and generate token
+            echo "🔧 Creating scanner user and generating token..."
+            
+            # Create scanner user (ignore if already exists)
+            echo "👤 Creating scanner user..."
+            curl -s -u admin:admin123 -X POST "${{ inputs.sonar-host-url }}/api/users/create" \
+              -d "login=scanner" \
+              -d "name=Scanner User" \
+              -d "password=scanner123" \
+              -d "email=scanner@localhost" 2>/dev/null || echo "User may already exist"
+            
+            # Add scanner user to sonar-users group
+            echo "🔑 Adding scanner to sonar-users group..."
+            curl -s -u admin:admin123 -X POST "${{ inputs.sonar-host-url }}/api/user_groups/add_user" \
+              -d "login=scanner" \
+              -d "name=sonar-users" 2>/dev/null || echo "User may already be in group"
+            
+            # Generate token for scanner user
+            echo "🎫 Generating authentication token..."
+            sleep 5
+            
+            TOKEN_RESPONSE=$(curl -s -u scanner:scanner123 -X POST "${{ inputs.sonar-host-url }}/api/user_tokens/generate" \
+              -d "name=scanner-token-$(date +%Y%m%d-%H%M%S)" 2>/dev/null)
+            
+            if echo "$TOKEN_RESPONSE" | grep -q '"token"'; then
+              SCANNER_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+              echo "✅ Scanner token generated successfully"
+              echo "auth-method=token" >> $GITHUB_OUTPUT
+              echo "auth-value=$SCANNER_TOKEN" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ Token generation failed, falling back to admin credentials"
+              echo "auth-method=login" >> $GITHUB_OUTPUT
+              echo "login=admin" >> $GITHUB_OUTPUT
+              echo "password=admin123" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "⚠️ Admin setup failed, using fallback credentials"
+            echo "auth-method=login" >> $GITHUB_OUTPUT
+            echo "login=admin" >> $GITHUB_OUTPUT
+            echo "password=admin123" >> $GITHUB_OUTPUT
+          fi
         fi
 
     - name: "📋 Setup Project"
       run: |
         echo "📋 Setting up SonarQube project..."
         
-        # Determine authentication
+        # Determine authentication method for project setup
         if [ "${{ steps.auth.outputs.auth-method }}" = "token" ]; then
-          AUTH_HEADER="Authorization: Bearer ${{ steps.auth.outputs.auth-value }}"
-          AUTH_CURL="-H \"$AUTH_HEADER\""
+          echo "🎫 Using token authentication for project setup"
+          AUTH_CURL="-H \"Authorization: Bearer ${{ steps.auth.outputs.auth-value }}\""
         else
+          echo "🔐 Using login authentication for project setup"
           LOGIN="${{ steps.auth.outputs.login }}"
           PASSWORD="${{ steps.auth.outputs.password }}"
           AUTH_CURL="-u $LOGIN:$PASSWORD"
