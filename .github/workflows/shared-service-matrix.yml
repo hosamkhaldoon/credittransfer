@@ -203,7 +203,7 @@ jobs:
       if: inputs.operation == 'push'
       env:
         REGISTRY: ${{ matrix.registry }}
-        IMAGE: ${{ github.repository_owner }}/${{ matrix.image }}
+        IMAGE: ${{ secrets.registry-username }}/${{ matrix.image }}
         VERSION: ${{ matrix.version_tag }}
       run: |
         echo "🔐 Logging in to $REGISTRY"
