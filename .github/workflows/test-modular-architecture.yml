@@ -146,7 +146,7 @@ jobs:
   test-summary:
     name: "📊 Test Summary"
     runs-on: ubuntu-latest
-    needs: [test-dotnet-setup, test-unit-tests, test-security, test-service-matrix-build, test-sonarqube, test-ngrok-access, test-service-matrix-test, test-service-matrix-health]
+    needs: [test-dotnet-setup, test-unit-tests, test-security, test-service-matrix-build, test-service-matrix-test, test-service-matrix-health]
     if: always()
     
     steps:
