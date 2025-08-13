@@ -130,26 +130,21 @@ jobs:
           echo "auth-value=${{ secrets.sonar-token }}" >> $GITHUB_OUTPUT
           echo "✅ Using provided SonarQube token"
         elif [ -n "${{ secrets.sonar-login }}" ] && [ -n "${{ secrets.sonar-password }}" ]; then
-          echo "auth-method=login" >> $GITHUB_OUTPUT
-          echo "login=${{ secrets.sonar-login }}" >> $GITHUB_OUTPUT
-          echo "password=${{ secrets.sonar-password }}" >> $GITHUB_OUTPUT
           echo "✅ Using provided login credentials (login: ${{ secrets.sonar-login }})"
           
-          # Test the provided credentials with a more reliable endpoint
-          echo "🧪 Testing provided credentials..."
-          # Wait a bit more for SonarQube to be fully ready
-          sleep 5
-          
-          # Try multiple endpoints to validate credentials
-          if curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/system/status" | grep -q "UP"; then
-            echo "✅ Provided credentials work with system status endpoint"
-          elif curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/users/current" | grep -q "login"; then
-            echo "✅ Provided credentials work with users endpoint"
-          elif curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" "${{ inputs.sonar-host-url }}/api/projects/search" >/dev/null 2>&1; then
-            echo "✅ Provided credentials work with projects endpoint"
+          # Always derive a short-lived token from provided credentials to avoid MSBuild auth path issues
+          echo "🎫 Attempting to generate a scanner token from provided credentials..."
+          TOKEN_RESPONSE=$(curl -s -u "${{ secrets.sonar-login }}:${{ secrets.sonar-password }}" -X POST "${{ inputs.sonar-host-url }}/api/user_tokens/generate" -d "name=gha-$(date +%Y%m%d-%H%M%S)" 2>/dev/null)
+          if echo "$TOKEN_RESPONSE" | grep -q '"token"'; then
+            DERIVED_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d '"' -f4)
+            echo "✅ Token generated successfully from login/password"
+            echo "auth-method=token" >> $GITHUB_OUTPUT
+            echo "auth-value=$DERIVED_TOKEN" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ Warning: Could not validate credentials with available endpoints"
-            echo "🔍 This may be normal if SonarQube is still starting up"
+            echo "⚠️ Could not generate token from provided credentials; falling back to login/password"
+            echo "auth-method=login" >> $GITHUB_OUTPUT
+            echo "login=${{ secrets.sonar-login }}" >> $GITHUB_OUTPUT
+            echo "password=${{ secrets.sonar-password }}" >> $GITHUB_OUTPUT
           fi
         else
           echo "auth-method=scanner-token" >> $GITHUB_OUTPUT

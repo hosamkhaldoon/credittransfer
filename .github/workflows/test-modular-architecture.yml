@@ -109,7 +109,7 @@ jobs:
       services: ${{ inputs.services_to_test || '["wcf", "api"]' }}
       environment: ${{ inputs.test_environment || 'dev' }}
       registry: 'docker.io'
-      push-images: false  # Don't push during testing
+      push-images: true
       version-tag: 'test-${{ github.run_number }}'
       working-directory: './Migrated'
     secrets:

@@ -6,7 +6,7 @@ on:
   workflow_call:
     inputs:
       operation:
-        description: 'Operation to perform (build, deploy, test, health-check)'
+        description: 'Operation to perform (build, push, deploy, test, health-check)'
         required: true
         type: string
       services:
@@ -25,7 +25,7 @@ on:
         default: 'docker.io'
         type: string
       push-images:
-        description: 'Whether to push built images'
+        description: 'Whether to push built images (for build operation)'
         required: false
         default: false
         type: boolean
@@ -167,7 +167,7 @@ jobs:
         rm -f service-config.json
 
   execute-operation:
-    name: "${{ inputs.operation == 'build' && '🔨' || inputs.operation == 'deploy' && '🚀' || inputs.operation == 'test' && '🧪' || '🏥' }} ${{ matrix.display_name }}"
+    name: "${{ inputs.operation == 'build' && '🔨' || inputs.operation == 'push' && '📤' || inputs.operation == 'deploy' && '🚀' || inputs.operation == 'test' && '🧪' || '🏥' }} ${{ matrix.display_name }}"
     runs-on: ubuntu-latest
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.service-count > 0
@@ -191,12 +191,36 @@ jobs:
         service-display-name: ${{ matrix.display_name }}
         dockerfile-path: ${{ matrix.working_directory }}/${{ matrix.dockerfile }}
         context-path: ${{ matrix.working_directory }}
-        image-name: ${{ matrix.image }}
+        image-name: ${{ github.repository_owner }}/${{ matrix.image }}
         registry: ${{ matrix.registry }}
         push-image: ${{ inputs.push-images }}
         version-tag: ${{ matrix.version_tag }}
         registry-username: ${{ secrets.registry-username }}
         registry-password: ${{ secrets.registry-password }}
+
+    # PUSH OPERATION (re-tag and push latest/version from local cache)
+    - name: "📤 Push Image"
+      if: inputs.operation == 'push'
+      env:
+        REGISTRY: ${{ matrix.registry }}
+        IMAGE: ${{ github.repository_owner }}/${{ matrix.image }}
+        VERSION: ${{ matrix.version_tag }}
+      run: |
+        echo "🔐 Logging in to $REGISTRY"
+        echo "${{ secrets.registry-password }}" | docker login "$REGISTRY" -u "${{ secrets.registry-username }}" --password-stdin
+        echo "🔍 Locating locally built image tag for $IMAGE"
+        LOCAL_TAG=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "$IMAGE:" | head -n1 || true)
+        if [ -z "$LOCAL_TAG" ]; then
+          echo "⚠️ No local image found for $IMAGE. You might want to run operation=build with push-images=true."
+          exit 1
+        fi
+        echo "📦 Found local image: $LOCAL_TAG"
+        docker tag "$LOCAL_TAG" "$REGISTRY/$IMAGE:$VERSION"
+        docker tag "$LOCAL_TAG" "$REGISTRY/$IMAGE:latest"
+        echo "📤 Pushing $REGISTRY/$IMAGE:$VERSION"
+        docker push "$REGISTRY/$IMAGE:$VERSION"
+        echo "📤 Pushing $REGISTRY/$IMAGE:latest"
+        docker push "$REGISTRY/$IMAGE:latest"
 
     # DEPLOY OPERATION
     - name: "🚀 Deploy Service"
