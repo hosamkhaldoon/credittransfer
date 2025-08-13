@@ -117,26 +117,7 @@ jobs:
       registry-password: ${{ secrets.DOCKER_PASSWORD }}
 
 
-  # Test 6: Ngrok Public Access
-  test-ngrok-access:
-    name: "🌐 Test: Public Access"
-    runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'ngrok-access') && (github.event_name == 'push' || inputs.expose_sonarqube) }}
-    needs: [test-sonarqube]
-    timeout-minutes: 45
-    
-    steps:
-    - name: "📥 Checkout Code"
-      uses: actions/checkout@v4
-    
-    - name: "🌐 Create Public SonarQube Access"
-      uses: ./.github/actions/setup-ngrok
-      with:
-        port: 9000
-        auth-token: ${{ secrets.NGROK_AUTH_TOKEN }}
-        duration-minutes: 15  # Short duration for testing
-        service-name: "SonarQube Test"
-        service-url-path: "/dashboard?id=credit-transfer-test"
+
 
   # Test 7: Service Matrix - Test Operation
   test-service-matrix-test:
