@@ -133,7 +133,6 @@ jobs:
           --configuration ${{ inputs.configuration }} \
           --no-build \
           --logger "trx;LogFileName=$TEST_RUN_ID.trx" \
-          --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true" \
           --collect:"XPlat Code Coverage" \
           --results-directory ./test-results \
           --filter "${{ inputs.test-filter }}" \
@@ -146,6 +145,7 @@ jobs:
         TESTS_FAILED=0
         TESTS_SKIPPED=0
         
+        shopt -s globstar nullglob
         for trx_file in test-results/**/*.trx; do
           if [ -f "$trx_file" ]; then
             echo "Processing: $trx_file"
@@ -204,7 +204,8 @@ jobs:
         echo "📊 Generating coverage report..."
         
         # Find coverage files
-        COVERAGE_FILES=$(find test-results -name "*coverage*.xml" -type f)
+        shopt -s globstar nullglob
+        COVERAGE_FILES=$(echo test-results/**/*coverage*.xml)
         if [ -z "$COVERAGE_FILES" ]; then
           echo "❌ No coverage files found - skipping report generation"
           echo "coverage-percentage=0" >> $GITHUB_OUTPUT

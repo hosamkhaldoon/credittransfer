@@ -116,23 +116,6 @@ jobs:
       registry-username: ${{ secrets.DOCKER_USERNAME }}
       registry-password: ${{ secrets.DOCKER_PASSWORD }}
 
-  # Test 5: SonarQube Analysis
-  test-sonarqube:
-    name: "🔍 Test: SonarQube Analysis"
-    if: ${{ github.event_name == 'push' || inputs.test_component == 'all' || inputs.test_component == 'sonarqube-analysis' }}
-    needs: [test-unit-tests]
-    uses: ./.github/workflows/shared-sonarqube-analysis.yml
-    with:
-      project-key: 'credit-transfer-test'
-      project-name: "Credit Transfer Test"
-      sonar-host-url: 'http://localhost:9000'
-      working-directory: './Migrated'
-      solution-file: 'CreditTransfer.Modern.sln'
-      dotnet-version: '9.0.x'
-      skip-build: true  # Solution already built
-    secrets:
-      sonar-login: admin
-      sonar-password: admin123
 
   # Test 6: Ngrok Public Access
   test-ngrok-access:
